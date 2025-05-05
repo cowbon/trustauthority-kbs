@@ -136,7 +136,7 @@ func (d *Defender) CleanupTask(quit <-chan struct{}) {
 	for {
 		select {
 		case <-quit:
-			break
+			return
 		case <-c:
 			d.Cleanup()
 		}
