@@ -16,21 +16,21 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/pem"
-	itaConnector "github.com/intel/trustauthority-client/go-connector"
-	"github.com/sirupsen/logrus"
 	"hash"
-	"intel/kbs/v1/crypt"
 	"io"
 	"math/big"
 	"net/http"
 	"time"
 
 	"intel/kbs/v1/constant"
+	"intel/kbs/v1/crypt"
 	"intel/kbs/v1/keymanager"
 	"intel/kbs/v1/model"
 
 	"github.com/google/uuid"
+	itaConnector "github.com/intel/trustauthority-client/go-connector"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -296,8 +296,10 @@ func getPublicKey(userData string, attesterType model.AttesterType) (*rsa.Public
 		for i := 0; i < len(modArr)/2; i++ {
 			modArr[i], modArr[len(modArr)-i-1] = modArr[len(modArr)-i-1], modArr[i]
 		}
+		eb = binary.LittleEndian.Uint32(key[:])
+	} else {
+		eb = binary.BigEndian.Uint32(key[:])
 	}
-	eb = binary.LittleEndian.Uint32(key[:])
 	n.SetBytes(modArr)
 
 	// imposing lower limit on the size of the public key for enhanced security reasons
