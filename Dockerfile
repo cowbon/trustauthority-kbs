@@ -1,10 +1,9 @@
 #Copyright(C) 2023 Intel Corporation. All Rights Reserved.
 
 
-ARG PACKAGES_TO_COVER="config\|keymanager\|transport\|service"
 ARG VERSION=v0.0.0
 
-FROM golang:1.24.12 AS builder
+FROM golang:1.25.7 AS builder
 ARG VERSION
 WORKDIR /app
 COPY . .
@@ -40,21 +39,19 @@ CMD ["run"]
 FROM builder AS tester
 ARG VERSION
 ARG GITCOMMIT
-ARG PACKAGES_TO_COVER
 WORKDIR /app
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
     BUILDDATE=$(TZ=UTC date +%Y-%m-%dT%H:%M:%S%z); \
-    env CGO_CFLAGS_ALLOW="-f.*" GOEXPERIMENT=nocoverageredesign GOOS=linux GOSUMDB=off \
-    /usr/local/go/bin/go test ./... \
-        -coverpkg="${COVER_PACKAGES}" -coverprofile cover.out \
+    env CGO_CFLAGS_ALLOW="-f.*" GOOS=linux GOSUMDB=off \
+    /usr/local/go/bin/go test \
+        $(go list ./... | grep -v '/mocks') -coverprofile cover.out \
     -ldflags "-X intel/kbs/cache/v1/version.BuildDate=${BUILDDATE} -X intel/kbs/cache/v1/version.Version=${VERSION} -X intel/kbs/cache/v1/version.GitHash=${GITCOMMIT}"
 RUN  /usr/local/go/bin/go tool cover -html=cover.out -o cover.html
 
 FROM builder AS swagger
 ARG VERSION
 ARG GITCOMMIT
-ARG PACKAGES_TO_COVER
 WORKDIR /app
 COPY . .
 RUN wget https://github.com/go-swagger/go-swagger/releases/download/v0.30.0/swagger_linux_amd64 -O /usr/local/bin/swagger

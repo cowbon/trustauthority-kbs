@@ -9,12 +9,13 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"github.com/google/uuid"
-	"github.com/onsi/gomega"
+	"intel/kbs/v1/mocks"
 	"intel/kbs/v1/model"
 	"intel/kbs/v1/repository"
-	"intel/kbs/v1/repository/mocks"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/onsi/gomega"
 )
 
 var userID uuid.UUID
@@ -50,6 +51,22 @@ func TestUserCreate(t *testing.T) {
 	userID = response.ID
 }
 
+func TestUserCreateExistingUsername(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	svc := LoggingMiddleware()(svcUserTestInstance)
+	g.Expect(svc).NotTo(gomega.BeNil())
+
+	var request *model.User
+	userJson := `{
+			"username": "keyManager"
+        }`
+
+	json.Unmarshal([]byte(userJson), &request)
+	_, err := svc.CreateUser(context.Background(), request)
+	g.Expect(err).To(gomega.HaveOccurred())
+}
+
 func TestUserUpdate(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
@@ -59,13 +76,45 @@ func TestUserUpdate(t *testing.T) {
 	request := model.UpdateUserRequest{
 		ID: userID,
 		UpdateUser: &model.User{
-			Username: "updatedKeyUsername",
+			Username:    "updatedKeyUsername",
+			Password:    "updatedKeyPassword",
+			Permissions: []string{"keys:update"},
 		},
 	}
 
-	response, err := svc.UpdateUser(context.Background(), &request)
+	_, err := svc.UpdateUser(context.Background(), &request)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
-	userID = response.ID
+}
+
+func TestUserUpdateExistingUsername(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	svc := LoggingMiddleware()(svcUserTestInstance)
+	g.Expect(svc).NotTo(gomega.BeNil())
+
+	request := model.UpdateUserRequest{
+		ID: userID,
+		UpdateUser: &model.User{
+			Username: "keyManager",
+		},
+	}
+
+	_, err := svc.UpdateUser(context.Background(), &request)
+	g.Expect(err).To(gomega.HaveOccurred())
+}
+
+func TestUserUpdateInvalidId(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	svc := LoggingMiddleware()(svcUserTestInstance)
+	g.Expect(svc).NotTo(gomega.BeNil())
+
+	request := model.UpdateUserRequest{
+		ID: uuid.New(),
+	}
+
+	_, err := svc.UpdateUser(context.Background(), &request)
+	g.Expect(err).To(gomega.HaveOccurred())
 }
 
 func TestUserSearch(t *testing.T) {
@@ -96,7 +145,6 @@ func TestUserRetrieveInvalidId(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	svc := LoggingMiddleware()(svcUserTestInstance)
 	g.Expect(svc).NotTo(gomega.BeNil())
-
 	tmpId := uuid.New()
 	_, err := svc.RetrieveUser(context.Background(), tmpId)
 	g.Expect(err).To(gomega.HaveOccurred())

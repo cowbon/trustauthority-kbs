@@ -7,9 +7,10 @@
 package tasks
 
 import (
-	"github.com/onsi/gomega"
-	"intel/kbs/v1/repository/mocks"
+	"intel/kbs/v1/mocks"
 	"testing"
+
+	"github.com/onsi/gomega"
 )
 
 func TestCreateAdminUser(t *testing.T) {

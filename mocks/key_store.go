@@ -5,13 +5,14 @@
 package mocks
 
 import (
-	"github.com/google/uuid"
-	"github.com/pkg/errors"
-	defaultLog "github.com/sirupsen/logrus"
 	"intel/kbs/v1/model"
 	"intel/kbs/v1/repository/directory"
 	"reflect"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
+	defaultLog "github.com/sirupsen/logrus"
 )
 
 // MockKeyStore provides a mocked implementation of interface domain.KeyStore

@@ -7,8 +7,9 @@
 package model
 
 import (
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type KeyTransferPolicy struct {
@@ -21,7 +22,7 @@ type KeyTransferPolicy struct {
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// Defines if SGX\TDX Attributes need to be part of key Transfer Policy
 	// required: true
-	// example: [ { "SGX" } ]
+	// example: "SGX"
 	AttestationType AttesterType `json:"attestation_type"`
 	// List of SGX Enclave Attributes that are part of Enclave
 	SGX *SgxPolicy `json:"sgx,omitempty"`

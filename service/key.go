@@ -9,10 +9,11 @@ package service
 import (
 	"context"
 	"crypto/sha512"
-	"github.com/sirupsen/logrus"
 	"intel/kbs/v1/constant"
 	"net/http"
 	"time"
+
+	"github.com/sirupsen/logrus"
 
 	"intel/kbs/v1/model"
 
@@ -207,7 +208,7 @@ func (svc service) TransferKey(_ context.Context, req TransferKeyRequest) (*Tran
 	}
 
 	// Wrap secret key with public key
-	wrappedKey, status, err := wrapKey(req.PublicKey, secretKey.([]byte), sha512.New384(), nil)
+	wrappedKey, status, err := wrapKey(req.PublicKey, secretKey, sha512.New384(), nil)
 	if err != nil {
 		return nil, &HandledError{Code: status, Message: err.Error()}
 	}

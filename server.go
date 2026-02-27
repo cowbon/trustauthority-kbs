@@ -13,7 +13,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	jwtStrategy "github.com/shaj13/go-guardian/v2/auth/strategies/jwt"
 	"intel/kbs/v1/clients/ita"
 	"intel/kbs/v1/config"
 	"intel/kbs/v1/tasks"
@@ -24,6 +23,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	jwtStrategy "github.com/shaj13/go-guardian/v2/auth/strategies/jwt"
 
 	"intel/kbs/v1/constant"
 	"intel/kbs/v1/keymanager"
@@ -153,7 +154,7 @@ func (app *App) startServer() error {
 	}
 
 	// Setup signal handlers to gracefully handle termination
-	stop := make(chan os.Signal)
+	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", configuration.ServicePort),

@@ -11,12 +11,10 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
-	"intel/kbs/v1/clients/ita"
 	"intel/kbs/v1/keymanager"
-	"intel/kbs/v1/kmipclient"
+	"intel/kbs/v1/mocks"
 	"intel/kbs/v1/model"
 	"intel/kbs/v1/repository"
-	"intel/kbs/v1/repository/mocks"
 	"testing"
 
 	"github.com/google/uuid"
@@ -25,12 +23,11 @@ import (
 )
 
 var gKeyId uuid.UUID
-var rsaKeyId uuid.UUID
-var itaClientConnector *ita.MockClient = ita.NewMockClient()
+var itaClientConnector *mocks.MockClient = mocks.NewMockClient()
 var keyStore *mocks.MockKeyStore = mocks.NewFakeKeyStore()
 var keyTransPolicyStore *mocks.MockKeyTransferPolicyStore = mocks.NewFakeKeyTransferPolicyStore()
-var kmipClient kmipclient.MockKmipClient = kmipclient.MockKmipClient{}
-var kmipKeyManager *keymanager.MockKmipManager = keymanager.NewMockKmipManager(kmipClient)
+var kmipClient mocks.MockKmipClient = mocks.MockKmipClient{}
+var kmipKeyManager *mocks.MockKmipManager = mocks.NewMockKmipManager(kmipClient)
 var kRemoteManager *keymanager.RemoteManager = keymanager.NewRemoteManager(keyStore, kmipKeyManager)
 var svcInstance Service = service{
 	itaApiClient:           itaClientConnector,
@@ -53,7 +50,6 @@ func TestKeyRegister(t *testing.T) {
 		KeyLength:        128,
 		KmipKeyID:        "6",
 		TransferPolicyId: uuid.MustParse("ee37c360-7eae-4250-a677-6ee12adce8e2"),
-		TransferLink:     "/kbs/v1/keys/" + keyId.String() + "/transfer",
 	}
 	kmipKeyManager.On("RegisterKey", mock.Anything).Return(&keyAttr, nil)
 
@@ -84,7 +80,6 @@ func TestKeyAES256Create(t *testing.T) {
 		KeyLength:        256,
 		KmipKeyID:        "1",
 		TransferPolicyId: uuid.MustParse("ee37c360-7eae-4250-a677-6ee12adce8e2"),
-		TransferLink:     "/kbs/v1/keys/186d560f-95d5-4d39-92cc-f67e989d2e55/transfer",
 	}
 	kmipKeyManager.On("CreateKey", mock.Anything).Return(&keyAttr, nil)
 
@@ -113,7 +108,6 @@ func TestKeyAES256CreateWithInvalidPolicy(t *testing.T) {
 		KeyLength:        256,
 		KmipKeyID:        "1",
 		TransferPolicyId: uuid.MustParse("ee37c360-7eae-4250-a677-6ee12adce8e2"),
-		TransferLink:     "/kbs/v1/keys/186d560f-95d5-4d39-92cc-f67e989d2e55/transfer",
 	}
 	kmipKeyManager.On("CreateKey", mock.Anything).Return(&keyAttr, nil)
 
@@ -200,7 +194,6 @@ func TestKeyRSARegister(t *testing.T) {
 		KeyLength:        3072,
 		KmipKeyID:        "5",
 		TransferPolicyId: uuid.MustParse("ee37c360-7eae-4250-a677-6ee12adce8e2"),
-		TransferLink:     "/kbs/v1/keys/" + keyId.String() + "/transfer",
 	}
 	kmipKeyManager.On("RegisterKey", mock.Anything).Return(&keyAttr, nil).Once()
 
@@ -218,9 +211,8 @@ func TestKeyRSARegister(t *testing.T) {
         }`
 
 	json.Unmarshal([]byte(keyJson), &request)
-	keyResponse, err := svc.CreateKey(context.Background(), request)
+	_, err := svc.CreateKey(context.Background(), request)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
-	rsaKeyId = keyResponse.ID
 }
 
 func TestKeyECRegister(t *testing.T) {
@@ -233,7 +225,6 @@ func TestKeyECRegister(t *testing.T) {
 		CurveType:        "secp256r1",
 		KmipKeyID:        "6",
 		TransferPolicyId: uuid.MustParse("ee37c360-7eae-4250-a677-6ee12adce8e2"),
-		TransferLink:     "/kbs/v1/keys/" + keyId.String() + "/transfer",
 	}
 	kmipKeyManager.On("RegisterKey", mock.Anything).Return(&keyAttr, nil).Once()
 
@@ -287,7 +278,6 @@ func TestKeyRegisterInvalidTransferPolicy(t *testing.T) {
 		KeyLength:        256,
 		KmipKeyID:        "1",
 		TransferPolicyId: tPolicyid,
-		TransferLink:     "/kbs/v1/keys/186d560f-95d5-4d39-92cc-f67e989d2e55/transfer",
 	}
 	kmipKeyManager.On("RegisterKey", mock.Anything).Return(&keyAttr, nil).Once()
 
@@ -361,6 +351,13 @@ func TestKeyUpdateNegative(t *testing.T) {
 	keyUpdateReq = model.KeyUpdateRequest{
 		KeyId:            uuid.MustParse("ee37c360-7eae-4250-a677-6ee12adce8e2"),
 		TransferPolicyID: uuid.MustParse("f64e25de-634f-44a3-b520-db480d8781cf"),
+	}
+	_, err = svc.UpdateKey(context.Background(), keyUpdateReq)
+	g.Expect(err).To(gomega.HaveOccurred())
+
+	// nil key-transfer-policy
+	keyUpdateReq = model.KeyUpdateRequest{
+		KeyId: uuid.MustParse("ee37c360-7eae-4250-a677-6ee12adce8e2"),
 	}
 	_, err = svc.UpdateKey(context.Background(), keyUpdateReq)
 	g.Expect(err).To(gomega.HaveOccurred())

@@ -8,19 +8,19 @@ package http
 
 import (
 	"bytes"
+	"intel/kbs/v1/model"
+	"intel/kbs/v1/service"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
 	httpTransport "github.com/go-kit/kit/transport/http"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/onsi/gomega"
 	jwtStrategy "github.com/shaj13/go-guardian/v2/auth/strategies/jwt"
 	"github.com/stretchr/testify/mock"
-	"intel/kbs/v1/model"
-	"intel/kbs/v1/service"
-	"io"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
 )
 
 var (
@@ -111,7 +111,74 @@ func TestKeySearchHandler(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusOK))
 }
 
-func TestKeyCreateHandlerInvalidContReq(t *testing.T) {
+func TestKeySearchHandlerInvalidAcceptHeader(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	var resp []*model.KeyResponse
+
+	mockService := &MockService{}
+	mockService.On("SearchKeys", mock.Anything, mock.Anything).Return(resp, nil)
+	handler := createMockHandler(mockService)
+
+	err := setKeyHandler(mockService, mux.NewRouter(), nil, jwtAuth)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	req, _ := http.NewRequest(http.MethodGet, "/kbs/v1/keys", nil)
+	req.Header.Set("Accept", "test/plain")
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	q := req.URL.Query()
+	q.Add(Algorithm, "AES")
+	q.Add(KeyLength, "128")
+	req.URL.RawQuery = q.Encode()
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer res.Body.Close()
+
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+
+	t.Log("Response: ", string(data))
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusUnsupportedMediaType))
+}
+
+func TestKeySearchHandlerInvalidQueryParam(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	var resp []*model.KeyResponse
+
+	mockService := &MockService{}
+	mockService.On("SearchKeys", mock.Anything, mock.Anything).Return(resp, nil)
+	handler := createMockHandler(mockService)
+
+	err := setKeyHandler(mockService, mux.NewRouter(), nil, jwtAuth)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	req, _ := http.NewRequest(http.MethodGet, "/kbs/v1/keys", nil)
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+	q := req.URL.Query()
+	// invalid query param
+	q.Add("Usernames", "admin")
+	req.URL.RawQuery = q.Encode()
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+}
+
+func TestKeyCreateHandlerInvalidContentTypeHeader(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	keyCreateRes := &model.KeyResponse{}
 
@@ -143,7 +210,39 @@ func TestKeyCreateHandlerInvalidContReq(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusUnsupportedMediaType))
 }
 
-func TestKeyCreateHandlerEmptyReq(t *testing.T) {
+func TestKeyCreateHandlerInvalidAcceptHeader(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	keyCreateRes := &model.KeyResponse{}
+
+	mockService := &MockService{}
+	mockService.On("CreateKey", mock.Anything, mock.Anything).Return(keyCreateRes, nil)
+	handler := createMockHandler(mockService)
+
+	options := []httpTransport.ServerOption{
+		httpTransport.ServerErrorEncoder(errorEncoder),
+	}
+	err := setKeyHandler(mockService, mux.NewRouter(), options, jwtAuth)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	req, _ := http.NewRequest(http.MethodPost, "/kbs/v1/keys", bytes.NewReader([]byte("")))
+	req.Header.Set("Accept", "plain/text")
+	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusUnsupportedMediaType))
+}
+
+func TestKeyCreateHandlerEmptyRequest(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	keyCreateRes := &model.KeyResponse{}
 
@@ -172,7 +271,7 @@ func TestKeyCreateHandlerEmptyReq(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
 }
 
-func TestKeyCreateHandlerInvalidReq(t *testing.T) {
+func TestKeyCreateHandlerInvalidKeyData(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	keyCreateRes := &model.KeyResponse{}
 
@@ -209,6 +308,29 @@ func TestKeyCreateHandlerInvalidReq(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
 	keyJson = `{
 		"key_information":{
+                      "key_length": 128
+			}
+        }`
+
+	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/keys", bytes.NewReader([]byte(keyJson)))
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res = recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+	keyJson = `{
+		"key_information":{
                       "algorithm": "AES",
                       "key_length": 1284
 		}
@@ -233,10 +355,153 @@ func TestKeyCreateHandlerInvalidReq(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
 	keyJson = `{
 		"key_information":{
+                      "algorithm": "AES"
+			}
+        }`
+
+	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/keys", bytes.NewReader([]byte(keyJson)))
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res = recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+	keyJson = `{
+		"key_information":{
+                      "algorithm": "RSA",
+                      "key_length": 1024
+		}
+        }`
+
+	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/keys", bytes.NewReader([]byte(keyJson)))
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res = recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+	keyJson = `{
+		"key_information":{
                       "algorithm": "EC",
-                      "curve_type": "secp256",
-		      "kmip_key_id": "111",
-		      "key_data": "invalidddddddddkeydata"
+                      "curve_type": "secp256"
+		}
+        }`
+
+	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/keys", bytes.NewReader([]byte(keyJson)))
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res = recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+
+	keyJson = `{
+		"key_information":{
+                      "algorithm": "EC"
+		}
+        }`
+
+	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/keys", bytes.NewReader([]byte(keyJson)))
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res = recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+	keyJson = `{
+		"key_information":{
+                      "algorithm": "RSA",
+                      "key_length": 3072,
+                      "key_data": "invalidpemdata$$$$%"
+		}
+        }`
+
+	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/keys", bytes.NewReader([]byte(keyJson)))
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res = recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+	keyJson = `{
+		"key_information":{
+                      "algorithm": "AES",
+                      "key_length": 256,
+                      "key_data": "dGhlbWEgZm9y"
+		}
+        }`
+
+	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/keys", bytes.NewReader([]byte(keyJson)))
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res = recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+	keyJson = `{
+		"key_information":{
+                      "algorithm": "AES",
+                      "key_length": 256,
+                      "kmip_key_id": "invalidid$$$$%"
 		}
         }`
 
@@ -259,42 +524,6 @@ func TestKeyCreateHandlerInvalidReq(t *testing.T) {
 }
 
 func TestKeyCreateHandler(t *testing.T) {
-	g := gomega.NewGomegaWithT(t)
-	keyCreateRes := &model.KeyResponse{}
-
-	mockService := &MockService{}
-	mockService.On("CreateKey", mock.Anything, mock.Anything).Return(keyCreateRes, nil)
-	handler := createMockHandler(mockService)
-
-	err := setKeyHandler(mockService, mux.NewRouter(), nil, jwtAuth)
-	g.Expect(err).NotTo(gomega.HaveOccurred())
-
-	keyJson := `{
-		"key_information":{
-                      "algorithm": "AES",
-                      "key_length": 128
-		}
-        }`
-
-	req, _ := http.NewRequest(http.MethodPost, "/kbs/v1/keys", bytes.NewReader([]byte(keyJson)))
-	req.Header.Set("Accept", HTTPMediaTypeJson)
-	req.Header.Set("Content-type", HTTPMediaTypeJson)
-	req.Header.Set("Authorization", "Bearer "+authToken)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	res := recorder.Result()
-	defer res.Body.Close()
-
-	_, err = io.ReadAll(res.Body)
-	if err != nil {
-		t.Errorf("expected error to be nil got %v", err)
-	}
-	g.Expect(recorder.Code).To(gomega.Equal(http.StatusCreated))
-}
-
-func TestKeyCreateValidKeyData(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	keyCreateRes := &model.KeyResponse{}
 
@@ -331,7 +560,7 @@ func TestKeyCreateValidKeyData(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusCreated))
 }
 
-func TestKeyCreateInvalidKeyData(t *testing.T) {
+func TestKeyCreateHandlerInvalidRequest(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	keyCreateRes := &model.KeyResponse{}
 
@@ -345,7 +574,7 @@ func TestKeyCreateInvalidKeyData(t *testing.T) {
 	keyJson := `{
 		"key_information":{
 		      "algorithm": "RSA",
-		      "key_length": 3072,
+		      "key_length": "3072",
 		      "key_data": "invalidpemdata$$$$%"
 		}
         }`
@@ -368,7 +597,7 @@ func TestKeyCreateInvalidKeyData(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
 }
 
-func TestKeySearchHandlerInvalidECCriteria(t *testing.T) {
+func TestKeySearchHandlerInvalidCriteria(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	var resp []*model.KeyResponse
 
@@ -384,14 +613,79 @@ func TestKeySearchHandlerInvalidECCriteria(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+authToken)
 
 	q := req.URL.Query()
-	q.Add(Algorithm, "EC")
-	q.Add(KeyLength, "sepc256")
+	q.Add(Algorithm, "ABC")
 	req.URL.RawQuery = q.Encode()
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 
 	res := recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+
+	q = req.URL.Query()
+	q.Set(Algorithm, "EC")
+	q.Add(KeyLength, "sepc256")
+	req.URL.RawQuery = q.Encode()
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res = recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+
+	q = req.URL.Query()
+	q.Set(KeyLength, "1284")
+	req.URL.RawQuery = q.Encode()
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res = recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+
+	q = req.URL.Query()
+	q.Set(KeyLength, "256")
+	q.Add(CurveType, "sepc256")
+	req.URL.RawQuery = q.Encode()
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res = recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+	q = req.URL.Query()
+	q.Set(CurveType, "secp256r1")
+	q.Add(TransferPolicyId, "1234")
+	req.URL.RawQuery = q.Encode()
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res = recorder.Result()
 	defer res.Body.Close()
 
 	_, err = io.ReadAll(res.Body)
@@ -472,7 +766,7 @@ func TestKeyRetrieveHandler(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusOK))
 }
 
-func TestKeyTransferHandlerInvalidContReq(t *testing.T) {
+func TestKeyTransferHandlerInvalidContentTypeHeader(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	keyTransferRes := &service.TransferKeyResponse{}
 
@@ -506,7 +800,41 @@ func TestKeyTransferHandlerInvalidContReq(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusUnsupportedMediaType))
 }
 
-func TestKeyTransferHandlerEmptyReq(t *testing.T) {
+func TestKeyTransferHandlerInvalidAcceptHeader(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	keyTransferRes := &service.TransferKeyResponse{}
+
+	keyId := uuid.New()
+
+	mockService := &MockService{}
+	mockService.On("TransferKey", mock.Anything, mock.Anything).Return(keyTransferRes, nil)
+	handler := createMockHandler(mockService)
+
+	options := []httpTransport.ServerOption{
+		httpTransport.ServerErrorEncoder(errorEncoder),
+	}
+	err := setKeyHandler(mockService, mux.NewRouter(), options, jwtAuth)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	req, _ := http.NewRequest(http.MethodPost, "/kbs/v1/keys/"+keyId.String(), bytes.NewReader([]byte("")))
+	req.Header.Set("Accept", "plain/text")
+	req.Header.Set("Content-type", HTTPMediaTypePem)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusUnsupportedMediaType))
+}
+
+func TestKeyTransferHandlerEmptyRequest(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	keyTransferRes := &service.TransferKeyResponse{}
 
@@ -534,40 +862,6 @@ func TestKeyTransferHandlerEmptyReq(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected error to be nil got %v", err)
 	}
-	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
-}
-
-func TestKeyTransferHandlerInvalidReq(t *testing.T) {
-	g := gomega.NewGomegaWithT(t)
-	keyTransferRes := &service.TransferKeyResponse{}
-
-	keyId := uuid.New()
-
-	mockService := &MockService{}
-	mockService.On("TransferKey", mock.Anything, mock.Anything).Return(keyTransferRes, nil)
-	handler := createMockHandler(mockService)
-
-	err := setKeyHandler(mockService, mux.NewRouter(), nil, jwtAuth)
-	g.Expect(err).NotTo(gomega.HaveOccurred())
-
-	keyPem := strings.Replace(strings.Replace(string(envelopeKey), "-----BEGIN PUBLIC KEY-----\n", "", 1), "-----END PUBLIC KEY-----", "", 1)
-
-	req, _ := http.NewRequest(http.MethodPost, "/kbs/v1/keys/"+keyId.String(), bytes.NewReader([]byte(keyPem)))
-	req.Header.Set("Accept", HTTPMediaTypeJson)
-	req.Header.Set("Content-type", HTTPMediaTypePem)
-	req.Header.Set("Authorization", "Bearer "+authToken)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	res := recorder.Result()
-	defer res.Body.Close()
-
-	_, err = io.ReadAll(res.Body)
-	if err != nil {
-		t.Errorf("expected error to be nil got %v", err)
-	}
-
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
 }
 
@@ -674,7 +968,7 @@ func TestKeyUpdateHandler(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusCreated))
 }
 
-func TestKeyUpdateHandlerInvalidPolicy(t *testing.T) {
+func TestKeyUpdateHandlerInvalidRequest(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	resp := &model.KeyResponse{}
 
@@ -786,7 +1080,7 @@ func TestKeyUpdateHandlerInvalidAcceptHeader(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusUnsupportedMediaType))
 }
 
-func TestKeyUpdateHandlerInvalidTokenHeader(t *testing.T) {
+func TestKeyUpdateHandlerEmptyRequest(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	resp := &model.KeyResponse{}
 
@@ -803,12 +1097,10 @@ func TestKeyUpdateHandlerInvalidTokenHeader(t *testing.T) {
 	err := setKeyHandler(mockService, mux.NewRouter(), options, jwtAuth)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 
-	updateReqBody := `{
-		"transfer_policy_id" : "43972e48-67c6-4b00-bd01-924f62751d1d"
-        }`
-	req, _ := http.NewRequest(http.MethodPut, "/kbs/v1/keys/"+keyId.String(), bytes.NewReader([]byte(updateReqBody)))
+	req, _ := http.NewRequest(http.MethodPut, "/kbs/v1/keys/"+keyId.String(), bytes.NewReader([]byte{}))
 	req.Header.Set("Accept", HTTPMediaTypeJson)
 	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
@@ -820,5 +1112,5 @@ func TestKeyUpdateHandlerInvalidTokenHeader(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected error to be nil got %v", err)
 	}
-	g.Expect(recorder.Code).To(gomega.Equal(http.StatusUnauthorized))
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
 }

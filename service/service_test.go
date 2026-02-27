@@ -7,18 +7,19 @@
 package service
 
 import (
-	"github.com/onsi/gomega"
-	"intel/kbs/v1/clients/ita"
 	"intel/kbs/v1/config"
 	"intel/kbs/v1/keymanager"
+	"intel/kbs/v1/mocks"
 	"intel/kbs/v1/repository"
 	"testing"
+
+	"github.com/onsi/gomega"
 )
 
 func TestNewValidService(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	conf := config.Configuration{}
-	itaClient := ita.NewMockClient()
+	itaClient := mocks.NewMockClient()
 	conf = config.Configuration{BearerTokenValidityInMinutes: 5}
 	_, err := NewService(itaClient, itaClient,
 		&repository.Repository{},

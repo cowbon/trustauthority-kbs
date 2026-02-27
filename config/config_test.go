@@ -7,15 +7,14 @@
 package config
 
 import (
-	"github.com/onsi/gomega"
-	"github.com/spf13/viper"
 	"intel/kbs/v1/constant"
 	"os"
 	"strings"
 	"testing"
-)
 
-// go test intel/amber/kbs/v1/config -v
+	"github.com/onsi/gomega"
+	"github.com/spf13/viper"
+)
 
 func clearEnv() {
 	os.Unsetenv("SERVICE_PORT")
@@ -111,27 +110,6 @@ func TestLoadInvalidServicePort(t *testing.T) {
 	clearEnv()
 }
 
-func TestSaveConf(t *testing.T) {
-	setValidEnv()
-	setViperInit()
-	_, err := LoadConfiguration()
-	if err != nil {
-		t.Log(err)
-	}
-
-	clearEnv()
-}
-
-func TestSaveConfInvalidFilename(t *testing.T) {
-	setValidEnv()
-	setViperInit()
-	_, err := LoadConfiguration()
-	if err != nil {
-		t.Log(err)
-	}
-	clearEnv()
-}
-
 func TestValidate(t *testing.T) {
 	setValidEnv()
 	setViperInit()
@@ -149,14 +127,14 @@ func TestValidate(t *testing.T) {
 func TestValidateInvalidConfig(t *testing.T) {
 	setValidEnv()
 	setViperInit()
+	g := gomega.NewGomegaWithT(t)
+
+	// invalid service port
 	cfg, err := LoadConfiguration()
 	if err != nil {
 		t.Log(err)
 	}
-	g := gomega.NewGomegaWithT(t)
-	// invalid service port
 	cfg.ServicePort = 10
-
 	err = cfg.Validate()
 	g.Expect(err).To(gomega.HaveOccurred())
 
@@ -176,6 +154,15 @@ func TestValidateInvalidConfig(t *testing.T) {
 		t.Log(err)
 	}
 	cfg.AdminUsername = "!!!"
+	err = cfg.Validate()
+	g.Expect(err).To(gomega.HaveOccurred())
+
+	// invalid password
+	cfg, err = LoadConfiguration()
+	if err != nil {
+		t.Log(err)
+	}
+	cfg.AdminPassword = "!!!"
 	err = cfg.Validate()
 	g.Expect(err).To(gomega.HaveOccurred())
 
@@ -200,6 +187,15 @@ func TestValidateInvalidConfig(t *testing.T) {
 	g.Expect(err).To(gomega.HaveOccurred())
 
 	// invalid api url
+	cfg, err = LoadConfiguration()
+	if err != nil {
+		t.Log(err)
+	}
+	cfg.TrustAuthorityApiUrl = ":invalid-url"
+	err = cfg.Validate()
+	g.Expect(err).To(gomega.HaveOccurred())
+
+	// invalid base url
 	cfg, err = LoadConfiguration()
 	if err != nil {
 		t.Log(err)

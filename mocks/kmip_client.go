@@ -4,7 +4,7 @@
  *   SPDX-License-Identifier: BSD-3-Clause
  */
 
-package kmipclient
+package mocks
 
 import (
 	"github.com/gemalto/kmip-go"

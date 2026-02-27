@@ -5,14 +5,15 @@
 package mocks
 
 import (
+	"intel/kbs/v1/model"
+	"reflect"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	defaultLog "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/crypto/bcrypt"
-	"intel/kbs/v1/model"
-	"reflect"
-	"time"
 )
 
 // MockUserStore provides a mocked implementation of interface domain.UserStore

@@ -47,7 +47,7 @@ test: test-image
 	docker run -i ${DOCKER_RUN_PROXY_FLAGS} --rm $(ORGNAME)/$(APPNAME)-unit-test:$(VERSION) /bin/bash -c "/usr/local/go/bin/go test ./..."
 
 test-coverage: test-image
-	docker run -i ${DOCKER_RUN_PROXY_FLAGS} --rm $(ORGNAME)/$(APPNAME)-unit-test:$(VERSION) /bin/bash -c "GOEXPERIMENT=nocoverageredesign /usr/local/go/bin/go test ./... -coverprofile=cover.out; /usr/local/go/bin/go tool cover -func cover.out"
+	docker run -i ${DOCKER_RUN_PROXY_FLAGS} --rm $(ORGNAME)/$(APPNAME)-unit-test:$(VERSION) /bin/bash -c "/usr/local/go/bin/go test \$$(go list ./... | grep -v '/mocks') -coverprofile=cover.out; /usr/local/go/bin/go tool cover -func cover.out"
 
 go-fmt: test-image
 	docker run -i --rm $(ORGNAME)/$(APPNAME)-unit-test:$(VERSION) env GOOS=linux GOSUMDB=off /usr/local/go/bin/gofmt -l .

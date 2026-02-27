@@ -9,18 +9,18 @@ package keymanager
 import (
 	"testing"
 
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/mock"
-	"intel/kbs/v1/kmipclient"
+	"intel/kbs/v1/mocks"
 	"intel/kbs/v1/model"
 	"intel/kbs/v1/repository"
-	"intel/kbs/v1/repository/mocks"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestRemoteManagerCreateKey(t *testing.T) {
 	var keyStore *mocks.MockKeyStore
 
-	mockClient := kmipclient.NewMockKmipClient()
+	mockClient := mocks.NewMockKmipClient()
 	mockClient.On("CreateSymmetricKey", mock.Anything, mock.Anything).Return("1", nil)
 	keyManager := NewKmipManager(mockClient)
 
@@ -94,7 +94,7 @@ func TestRemoteManagerCreateKey(t *testing.T) {
 func TestRemoteManagerRetrieveKey(t *testing.T) {
 	var keyStore *mocks.MockKeyStore
 
-	mockClient := kmipclient.NewMockKmipClient()
+	mockClient := mocks.NewMockKmipClient()
 	mockClient.On("GetKey", mock.Anything).Return([]byte(""), nil)
 	keyManager := NewKmipManager(mockClient)
 
@@ -156,7 +156,7 @@ func TestRemoteManagerRetrieveKey(t *testing.T) {
 func TestRemoteManagerDeleteKey(t *testing.T) {
 	var keyStore *mocks.MockKeyStore
 
-	mockClient := kmipclient.NewMockKmipClient()
+	mockClient := mocks.NewMockKmipClient()
 	mockClient.On("DeleteKey", mock.Anything).Return(nil)
 	mockClient.On("GetKey", mock.Anything).Return([]byte(""), nil)
 	keyManager := NewKmipManager(mockClient)
@@ -214,7 +214,7 @@ func TestRemoteManagerDeleteKey(t *testing.T) {
 func TestRemoteManagerSearchKeys(t *testing.T) {
 	var keyStore *mocks.MockKeyStore
 
-	mockClient := kmipclient.NewMockKmipClient()
+	mockClient := mocks.NewMockKmipClient()
 	mockClient.On("GetKey", mock.Anything).Return([]byte(""), nil)
 	keyManager := NewKmipManager(mockClient)
 
@@ -265,11 +265,79 @@ func TestRemoteManagerSearchKeys(t *testing.T) {
 	}
 }
 
+func TestRemoteManagerUpdateKey(t *testing.T) {
+	var keyStore *mocks.MockKeyStore
+
+	mockClient := mocks.NewMockKmipClient()
+	mockClient.On("GetKey", mock.Anything).Return([]byte(""), nil)
+	keyManager := NewKmipManager(mockClient)
+
+	keyStore = mocks.NewFakeKeyStore()
+	policyId, _ := uuid.Parse("3ce27bbd-3c5f-4b15-8c0a-44310f0f83d9")
+
+	type fields struct {
+		store   repository.KeyStore
+		manager KeyManager
+	}
+	type args struct {
+		request *model.KeyUpdateRequest
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    []*model.KeyResponse
+		wantErr bool
+	}{
+		{
+			name: "Validate update key with valid input, should update a key",
+			fields: fields{
+				store:   keyStore,
+				manager: keyManager,
+			},
+			args: args{
+				request: &model.KeyUpdateRequest{
+					KeyId:            uuid.MustParse("ee37c360-7eae-4250-a677-6ee12adce8e2"),
+					TransferPolicyID: policyId,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Validate update key with invalid keyid, should fail to update a key",
+			fields: fields{
+				store:   keyStore,
+				manager: keyManager,
+			},
+			args: args{
+				request: &model.KeyUpdateRequest{
+					KeyId:            uuid.MustParse("ee37c360-7eae-4250-a677-6ee12adce9a3"),
+					TransferPolicyID: policyId,
+				},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rm := &RemoteManager{
+				store:   tt.fields.store,
+				manager: tt.fields.manager,
+			}
+			_, err := rm.UpdateKey(tt.args.request)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("RemoteManager.UpdateKey() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+		})
+	}
+}
+
 func TestRemoteManagerRegisterKey(t *testing.T) {
 
 	var keyStore *mocks.MockKeyStore
 
-	mockClient := kmipclient.NewMockKmipClient()
+	mockClient := mocks.NewMockKmipClient()
 	mockClient.On("CreateSymmetricKey", mock.Anything, mock.Anything).Return("1", nil)
 	keyManager := NewKmipManager(mockClient)
 
@@ -327,7 +395,7 @@ func TestRemoteManagerTransferKey(t *testing.T) {
 
 	var keyStore *mocks.MockKeyStore
 
-	mockClient := kmipclient.NewMockKmipClient()
+	mockClient := mocks.NewMockKmipClient()
 	mockClient.On("GetKey", mock.Anything).Return([]byte(""), nil)
 	keyManager := NewKmipManager(mockClient)
 
@@ -358,6 +426,17 @@ func TestRemoteManagerTransferKey(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "Validate transfer key with invalid keyid, should fail to transfer a key",
+			fields: fields{
+				store:   keyStore,
+				manager: keyManager,
+			},
+			args: args{
+				keyId: uuid.MustParse("ee37c360-7eae-4250-a677-6ee12adce9a3"),
+			},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -377,7 +456,7 @@ func TestRemoteManagerTransferKey(t *testing.T) {
 func TestNewRemoteManager(t *testing.T) {
 	var keyStore *mocks.MockKeyStore
 
-	mockClient := kmipclient.NewMockKmipClient()
+	mockClient := mocks.NewMockKmipClient()
 	keyManager := NewKmipManager(mockClient)
 
 	keyStore = mocks.NewFakeKeyStore()

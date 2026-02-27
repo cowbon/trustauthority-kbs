@@ -4,7 +4,7 @@
  *   SPDX-License-Identifier: BSD-3-Clause
  */
 
-package ita
+package mocks
 
 import (
 	"github.com/golang-jwt/jwt/v4"

@@ -8,16 +8,17 @@ package http
 
 import (
 	"bytes"
-	httpTransport "github.com/go-kit/kit/transport/http"
-	"github.com/google/uuid"
-	"github.com/gorilla/mux"
-	"github.com/onsi/gomega"
-	"github.com/stretchr/testify/mock"
 	"intel/kbs/v1/model"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	httpTransport "github.com/go-kit/kit/transport/http"
+	"github.com/google/uuid"
+	"github.com/gorilla/mux"
+	"github.com/onsi/gomega"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestUserDeleteHandler(t *testing.T) {
@@ -282,11 +283,11 @@ func TestUserCreateHandlerInvalidRequest(t *testing.T) {
 	err := setUserHandler(mockService, mux.NewRouter(), nil, jwtAuth)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 
-	// invalid permissions
+	// missing permissions
 	user := `{
                "username": "123",
-               "password": "password",
-               "permissions": ["userss:create"]
+               "password": "password123",
+               "permissions": []
              }`
 	req, _ := http.NewRequest(http.MethodPost, "/kbs/v1/users", bytes.NewReader([]byte(user)))
 	req.Header.Set("Accept", HTTPMediaTypeJson)
@@ -308,7 +309,7 @@ func TestUserCreateHandlerInvalidRequest(t *testing.T) {
 	// invalid permissions format
 	user = `{
               "username": "123",
-              "password": "password",
+              "password": "password123",
               "permissions": ["users"]
              }`
 	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/users", bytes.NewReader([]byte(user)))
@@ -331,7 +332,7 @@ func TestUserCreateHandlerInvalidRequest(t *testing.T) {
 	// invalid username
 	user = `{
               "username": "#####",
-              "password": "password",
+              "password": "password123",
               "permissions": ["users:create"]
             }`
 	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/users", bytes.NewReader([]byte(user)))
@@ -377,7 +378,7 @@ func TestUserCreateHandlerInvalidRequest(t *testing.T) {
 	// invalid json body
 	user = `{
               "username": "adminUsername",
-              "password": "password",
+              "password": "password123",
               "permission": ["users:create"]
             }`
 	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/users", bytes.NewReader([]byte(user)))
@@ -412,7 +413,7 @@ func TestUserCreateHandler(t *testing.T) {
 	user := `{
                "username": "userName",
                "password": "password@123",
-                "permissions": ["users:create"]
+               "permissions": ["users:create"]
              }`
 
 	req, _ := http.NewRequest(http.MethodPost, "/kbs/v1/users", bytes.NewReader([]byte(user)))
@@ -484,18 +485,19 @@ func TestUserUpdateHandlerInvalidHeaders(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusUnsupportedMediaType))
 }
 
-func TestUpdateHandlerEmptyUserId(t *testing.T) {
+func TestUserUpdateHandlerEmptyRequest(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	userCreateRes := &model.UserResponse{}
 
 	mockService := &MockService{}
 	mockService.On("UpdateUser", mock.Anything, mock.Anything).Return(userCreateRes, nil)
 	handler := createMockHandler(mockService)
+	userId := uuid.New().String()
 
 	err := setUserHandler(mockService, mux.NewRouter(), nil, jwtAuth)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 
-	req, _ := http.NewRequest(http.MethodPut, "/kbs/v1/users/", bytes.NewReader([]byte("")))
+	req, _ := http.NewRequest(http.MethodPut, "/kbs/v1/users/"+userId, bytes.NewReader([]byte("")))
 	req.Header.Set("Accept", HTTPMediaTypeJson)
 	req.Header.Set("Content-type", HTTPMediaTypeJson)
 	req.Header.Set("Authorization", "Bearer "+authToken)
@@ -510,7 +512,7 @@ func TestUpdateHandlerEmptyUserId(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected error to be nil got %v", err)
 	}
-	g.Expect(recorder.Code).To(gomega.Equal(http.StatusNotFound))
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
 }
 
 func TestUserUpdateHandlerInvalidRequest(t *testing.T) {
@@ -593,7 +595,7 @@ func TestUserUpdateHandlerInvalidRequest(t *testing.T) {
 	user = `{
                "permission": ["users:create"]
             }`
-	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/users", bytes.NewReader([]byte(user)))
+	req, _ = http.NewRequest(http.MethodPut, "/kbs/v1/users/"+userId, bytes.NewReader([]byte(user)))
 	req.Header.Set("Accept", HTTPMediaTypeJson)
 	req.Header.Set("Content-type", HTTPMediaTypeJson)
 	req.Header.Set("Authorization", "Bearer "+authToken)
@@ -602,36 +604,6 @@ func TestUserUpdateHandlerInvalidRequest(t *testing.T) {
 	handler.ServeHTTP(recorder, req)
 
 	res = recorder.Result()
-	defer res.Body.Close()
-
-	_, err = io.ReadAll(res.Body)
-	if err != nil {
-		t.Errorf("expected error to be nil got %v", err)
-	}
-	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
-}
-
-func TestUserUpdateHandlerEmptyRequest(t *testing.T) {
-	g := gomega.NewGomegaWithT(t)
-	userInfo := &model.UserResponse{}
-
-	mockService := &MockService{}
-	mockService.On("UpdateUser", mock.Anything, mock.Anything).Return(userInfo, nil)
-	handler := createMockHandler(mockService)
-	userId := uuid.New().String()
-
-	err := setUserHandler(mockService, mux.NewRouter(), nil, jwtAuth)
-	g.Expect(err).NotTo(gomega.HaveOccurred())
-
-	req, _ := http.NewRequest(http.MethodPut, "/kbs/v1/users/"+userId, bytes.NewReader([]byte("")))
-	req.Header.Set("Accept", HTTPMediaTypeJson)
-	req.Header.Set("Content-type", HTTPMediaTypeJson)
-	req.Header.Set("Authorization", "Bearer "+authToken)
-
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
-
-	res := recorder.Result()
 	defer res.Body.Close()
 
 	_, err = io.ReadAll(res.Body)

@@ -225,11 +225,7 @@ func decodeUpdateKeyHTTPRequest(_ context.Context, r *http.Request) (interface{}
 		return nil, ErrJsonDecodeFailed
 	}
 
-	id, err := uuid.Parse(mux.Vars(r)["id"])
-	if err != nil {
-		log.WithError(err).Error("Invalid key UUID format")
-		return nil, errors.New("Invalid key UUID format")
-	}
+	id := uuid.MustParse(mux.Vars(r)["id"])
 	keyUpdateReq.KeyId = id
 
 	return keyUpdateReq, nil

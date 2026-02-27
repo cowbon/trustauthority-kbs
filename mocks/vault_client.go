@@ -4,11 +4,12 @@
  *   SPDX-License-Identifier: BSD-3-Clause
  */
 
-package vaultclient
+package mocks
 
 import (
-	"github.com/stretchr/testify/mock"
 	"intel/kbs/v1/model"
+
+	"github.com/stretchr/testify/mock"
 )
 
 // MockVaultClient is a mock of VaultClient interface

@@ -8,11 +8,12 @@ package service
 
 import (
 	"encoding/json"
+	cns "intel/kbs/v1/mocks"
+	"intel/kbs/v1/model"
+	"testing"
+
 	"github.com/google/uuid"
 	"github.com/onsi/gomega"
-	"intel/kbs/v1/model"
-	cns "intel/kbs/v1/repository/mocks/constants"
-	"testing"
 )
 
 var zeroVal uint16 = 0
@@ -21,26 +22,13 @@ var oneVal uint16 = 1
 func TestValidateAttestationTokenClaimsSGX(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	tmpId := uuid.New().String()
-	policyReqJsonStr := string(`{
-					"id": "` + tmpId + `",
-					"attestation_type": "SGX",
-                                        "sgx":{
-                                           "attributes":{
-                                                  "mrsigner":[
-                                                         "` + cns.ValidMrSigner + `"
-                                                  ],
-                                                  "isvprodid":[
-                                                         1
-                                                  ],
-                                                  "mrenclave":[
-						  	"` + cns.ValidMrEnclave + `"
-                                                  ],
-                                                  "isvsvn":1,
-                                                  "enforce_tcb_upto_date":true
-                                           }
-                                        }
-				}`)
+	policyReqJsonStr := `{
+		"id": "3b9d565a-6ff5-4e5a-a0a8-64f3183d1722",
+		"attestation_type":"SGX",
+		"sgx": {
+		    "attributes" : {}
+		}
+	}`
 
 	tokenClaims := &model.AttestationTokenClaim{
 		SGXClaims: &model.SGXClaims{
@@ -57,6 +45,25 @@ func TestValidateAttestationTokenClaimsSGX(t *testing.T) {
 
 	json.Unmarshal([]byte(policyReqJsonStr), transferPolicy)
 	err := validateAttestationTokenClaims(tokenClaims, transferPolicy)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	policyReqJsonStr = `{
+		"id": "3b9d565a-6ff5-4e5a-a0a8-64f3183d1722",
+		"attestation_type": "SGX",
+		"sgx":{
+			"attributes":{
+				"mrsigner":["` + cns.ValidMrSigner + `"],
+				"isvprodid":[1],
+				"mrenclave":["` + cns.ValidMrEnclave + `"],
+				"isvsvn":1,
+				"enforce_tcb_upto_date":true
+			},
+			"policy_ids": ["4517534b-a758-4447-7d2f-3e5606152ed6", "34568456-2398-3875-7453-395766152ed6"]
+		}
+	}`
+
+	json.Unmarshal([]byte(policyReqJsonStr), transferPolicy)
+	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 
 	tokenClaims = &model.AttestationTokenClaim{
@@ -134,14 +141,20 @@ func TestValidateAttestationTokenClaimsSGX(t *testing.T) {
 	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
 	g.Expect(err).To(gomega.HaveOccurred())
 
-	policyReqJsonStr = string(`{
-					"id": "` + tmpId + `",
-					"attestation_type":"SGX",
-					"sgx":
-					    "attributes" : {}
-				}`)
+	tokenClaims = &model.AttestationTokenClaim{
+		PolicyIdsMatched: []model.PolicyClaim{
+			{Id: uuid.MustParse("4517534b-a758-4447-7d2f-3e5606152ed6"), Version: "v1"},
+			{Id: uuid.MustParse("34568456-2398-3875-7453-395766152ed6"), Version: "v1"},
+		},
+	}
 
-	json.Unmarshal([]byte(policyReqJsonStr), transferPolicy)
+	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	tokenClaims = &model.AttestationTokenClaim{
+		PolicyIdsMatched: []model.PolicyClaim{},
+	}
+
 	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
 	g.Expect(err).To(gomega.HaveOccurred())
 }
@@ -150,22 +163,12 @@ func TestValidateAttestationTokenClaimsTDX(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
 	policyReqJsonStr := `{
-			"id": "3b9d565a-6ff5-4e5a-a0a8-64f3183d1722",
-			"attestation_type": "TDX",
-			"tdx": {
-				  "attributes": {
-					    "mrsignerseam": ["` + cns.ValidMrSignerSeam + `"],
-					    "mrseam": ["` + cns.ValidMrSeam + `"],
-					    "seamsvn": 0,
-					    "mrtd": ["` + cns.ValidMRTD + `"],
-					    "rtmr0": "` + cns.ValidRTMR0 + `",
-					    "rtmr1": "` + cns.ValidRTMR1 + `",
-					    "rtmr2": "` + cns.ValidRTMR2 + `",
-					    "rtmr3": "` + cns.ValidRTMR3 + `",
-					    "enforce_tcb_upto_date": true
-				    }
-			}
-		}`
+		"id": "3b9d565a-6ff5-4e5a-a0a8-64f3183d1722",
+		"attestation_type": "TDX",
+		"tdx": {
+			"attributes": {}
+		}
+	}`
 
 	tokenClaims := &model.AttestationTokenClaim{
 		TDXClaims: &model.TDXClaims{
@@ -186,6 +189,29 @@ func TestValidateAttestationTokenClaimsTDX(t *testing.T) {
 
 	json.Unmarshal([]byte(policyReqJsonStr), transferPolicy)
 	err := validateAttestationTokenClaims(tokenClaims, transferPolicy)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	policyReqJsonStr = `{
+		"id": "3b9d565a-6ff5-4e5a-a0a8-64f3183d1722",
+		"attestation_type": "TDX",
+		"tdx": {
+			"attributes": {
+				"mrsignerseam": ["` + cns.ValidMrSignerSeam + `"],
+				"mrseam": ["` + cns.ValidMrSeam + `"],
+				"seamsvn": 0,
+				"mrtd": ["` + cns.ValidMRTD + `"],
+				"rtmr0": "` + cns.ValidRTMR0 + `",
+				"rtmr1": "` + cns.ValidRTMR1 + `",
+				"rtmr2": "` + cns.ValidRTMR2 + `",
+				"rtmr3": "` + cns.ValidRTMR3 + `",
+				"enforce_tcb_upto_date": true
+			},
+			"policy_ids": ["4517534b-a758-4447-7d2f-3e5606152ed6", "34568456-2398-3875-7453-395766152ed6"]
+		}
+	}`
+
+	json.Unmarshal([]byte(policyReqJsonStr), transferPolicy)
+	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 
 	tokenClaims = &model.AttestationTokenClaim{
@@ -355,18 +381,24 @@ func TestValidateAttestationTokenClaimsTDX(t *testing.T) {
 		AttesterType:      "TDX",
 		Version:           "1",
 	}
+
 	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
 	g.Expect(err).To(gomega.HaveOccurred())
 
-	policyReqJsonStr = `{
-		"id": "3b9d565a-6ff5-4e5a-a0a8-64f3183d1722",
-		"attestation_type": "TDX",
-		"tdx": {
-			  "attributes": {}
-		}
-	}`
+	tokenClaims = &model.AttestationTokenClaim{
+		PolicyIdsMatched: []model.PolicyClaim{
+			{Id: uuid.MustParse("4517534b-a758-4447-7d2f-3e5606152ed6"), Version: "v1"},
+			{Id: uuid.MustParse("34568456-2398-3875-7453-395766152ed6"), Version: "v1"},
+		},
+	}
 
-	json.Unmarshal([]byte(policyReqJsonStr), transferPolicy)
+	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	tokenClaims = &model.AttestationTokenClaim{
+		PolicyIdsMatched: []model.PolicyClaim{},
+	}
+
 	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
 	g.Expect(err).To(gomega.HaveOccurred())
 }

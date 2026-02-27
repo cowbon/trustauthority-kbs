@@ -1,7 +1,7 @@
 /*
  * Copyright(C) 2023 Intel Corporation. All Rights Reserved.
  */
-package constants
+package mocks
 
 var (
 	ValidMrEnclave    = "83f4e819861adef6ffb2a4865efea9337b91ed30fa33491b17f0d5d9e8204410"

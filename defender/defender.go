@@ -8,9 +8,10 @@
 package defender
 
 import (
-	"golang.org/x/time/rate"
 	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 const Factor = 10
@@ -113,9 +114,7 @@ func (d *Defender) Inc(key interface{}) bool {
 func (d *Defender) RemoveClient(key interface{}) {
 	d.Lock()
 	defer d.Unlock()
-	if _, found := d.clients[key]; found {
-		delete(d.clients, key)
-	}
+	delete(d.clients, key)
 }
 
 // Cleanup should be used if you want to manage the cleanup yourself, looks for CleanupTask for an automatic way

@@ -8,15 +8,16 @@ package service
 
 import (
 	"context"
+	"intel/kbs/v1/config"
+	"intel/kbs/v1/constant"
+	"intel/kbs/v1/mocks"
+	"intel/kbs/v1/model"
+	"intel/kbs/v1/repository"
+	"testing"
+
 	"github.com/onsi/gomega"
 	jwtStrategy "github.com/shaj13/go-guardian/v2/auth/strategies/jwt"
 	"github.com/stretchr/testify/mock"
-	"intel/kbs/v1/config"
-	"intel/kbs/v1/constant"
-	"intel/kbs/v1/model"
-	"intel/kbs/v1/repository"
-	"intel/kbs/v1/repository/mocks"
-	"testing"
 )
 
 var mockUserStore *mocks.MockUserStore = mocks.NewFakeUserStore()

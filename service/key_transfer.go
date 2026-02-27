@@ -195,12 +195,12 @@ func (svc service) getWrappedKey(keyAlgorithm, userData string, id uuid.UUID, at
 	}
 
 	secretKey, status, err := getSecretKey(svc.remoteManager, id)
-	defer crypt.ZeroizeByteArray(secretKey.([]byte))
+	defer crypt.ZeroizeByteArray(secretKey)
 	if err != nil {
 		return nil, status, err
 	}
 
-	swk, err := CreateSwk()
+	swk, err := createSwk()
 	defer crypt.ZeroizeByteArray(swk)
 	if err != nil {
 		logrus.Error("Error in creating SWK key")
@@ -210,13 +210,13 @@ func (svc service) getWrappedKey(keyAlgorithm, userData string, id uuid.UUID, at
 	var bytes, keyByte, nonceByte []byte
 	switch keyAlgorithm {
 	case constant.CRYPTOALGAES:
-		keyByte = secretKey.([]byte)
+		keyByte = secretKey
 
 	case constant.CRYPTOALGRSA:
 		privatePem := pem.EncodeToMemory(
 			&pem.Block{
 				Type:  "RSA PRIVATE KEY",
-				Bytes: secretKey.([]byte),
+				Bytes: secretKey,
 			},
 		)
 
@@ -233,7 +233,7 @@ func (svc service) getWrappedKey(keyAlgorithm, userData string, id uuid.UUID, at
 		privatePem := pem.EncodeToMemory(
 			&pem.Block{
 				Type:  "EC PRIVATE KEY",
-				Bytes: secretKey.([]byte),
+				Bytes: secretKey,
 			},
 		)
 
@@ -296,10 +296,8 @@ func getPublicKey(userData string, attesterType model.AttesterType) (*rsa.Public
 		for i := 0; i < len(modArr)/2; i++ {
 			modArr[i], modArr[len(modArr)-i-1] = modArr[len(modArr)-i-1], modArr[i]
 		}
-		eb = binary.LittleEndian.Uint32(key[:])
-	} else {
-		eb = binary.BigEndian.Uint32(key[:])
 	}
+	eb = binary.LittleEndian.Uint32(key[:])
 	n.SetBytes(modArr)
 
 	// imposing lower limit on the size of the public key for enhanced security reasons
@@ -311,7 +309,7 @@ func getPublicKey(userData string, attesterType model.AttesterType) (*rsa.Public
 	return &pubKey, nil
 }
 
-func getSecretKey(remoteManager *keymanager.RemoteManager, id uuid.UUID) (interface{}, int, error) {
+func getSecretKey(remoteManager *keymanager.RemoteManager, id uuid.UUID) ([]byte, int, error) {
 
 	secretKey, err := remoteManager.TransferKey(id)
 	if err != nil {
@@ -338,8 +336,8 @@ func wrapKey(publicKey *rsa.PublicKey, secretKey []byte, hash hash.Hash, label [
 	return wrappedKey, http.StatusOK, nil
 }
 
-// CreateSwk - Function to create swk
-func CreateSwk() ([]byte, error) {
+// createSwk - Function to create swk
+func createSwk() ([]byte, error) {
 
 	// create an AES Key here of 256 bits
 	keyBytes, err := crypt.GetDerivedKey(32)

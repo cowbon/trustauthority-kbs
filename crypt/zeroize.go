@@ -13,7 +13,7 @@ import (
 
 // ZeroizeByteArray overwrites a byte array's data with zeros
 func ZeroizeByteArray(bytes []byte) {
-	for i, _ := range bytes {
+	for i := range bytes {
 		bytes[i] = 0
 	}
 }

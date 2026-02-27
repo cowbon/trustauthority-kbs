@@ -54,7 +54,7 @@ func TestKeyTransferWithEvidenceHandler(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusOK))
 }
 
-func TestKeyTransferWithInvalidHeader(t *testing.T) {
+func TestKeyTransferWithInvalidAcceptHeader(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	resp := &service.TransferKeyResponse{}
 
@@ -69,13 +69,52 @@ func TestKeyTransferWithInvalidHeader(t *testing.T) {
 
 	transferJson := `{
 		"quote": "",
-		"signed_nonce": "",
+		"nonce": "",
 		"user_data": ""
 	}`
 
 	req, _ := http.NewRequest(http.MethodPost, "/kbs/v1/keys/"+keyId.String()+"/transfer", bytes.NewReader([]byte(transferJson)))
 	req.Header.Set("Accept", "plain/text")
 	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Attestion-type", "SGX")
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer res.Body.Close()
+
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+
+	t.Log("Response: ", string(data))
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusUnsupportedMediaType))
+}
+
+func TestKeyTransferWithInvalidContentTypeHeader(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	resp := &service.TransferKeyResponse{}
+
+	keyId := uuid.New()
+
+	mockService := &MockService{}
+	mockService.On("TransferKeyWithEvidence", mock.Anything, mock.Anything).Return(resp, nil)
+	handler := createMockHandler(mockService)
+
+	err := setKeyHandler(mockService, mux.NewRouter(), nil, jwtAuth)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	transferJson := `{
+		"quote": "",
+		"nonce": "",
+		"user_data": ""
+	}`
+
+	req, _ := http.NewRequest(http.MethodPost, "/kbs/v1/keys/"+keyId.String()+"/transfer", bytes.NewReader([]byte(transferJson)))
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Content-type", "plain/text")
 	req.Header.Set("Attestion-type", "SGX")
 
 	recorder := httptest.NewRecorder()
@@ -108,7 +147,6 @@ func TestKeyTransferInvalidAttestionType(t *testing.T) {
 
 	transferJson := `{
 		"quote": "",
-		"signed_nonce": "",
 		"user_data": ""
 	}`
 
@@ -147,14 +185,13 @@ func TestKeyTransferwithNilPostData(t *testing.T) {
 
 	transferJson := `{
 		"quote": "",
-		"signed_nonce": "",
 		"user_data": ""
 	}`
 
 	req, _ := http.NewRequest(http.MethodPost, "/kbs/v1/keys/"+keyId.String()+"/transfer", bytes.NewReader([]byte(transferJson)))
 	req.Header.Set("Accept", HTTPMediaTypeJson)
 	req.Header.Set("Content-type", HTTPMediaTypeJson)
-	req.Header.Set("Attestation-Type", "SGX")
+	//req.Header.Set("Attestation-Type", "SGX")
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)

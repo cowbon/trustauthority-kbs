@@ -8,8 +8,8 @@ package http
 
 import (
 	"bytes"
+	cns "intel/kbs/v1/mocks"
 	"intel/kbs/v1/model"
-	cns "intel/kbs/v1/repository/mocks/constants"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -52,6 +52,7 @@ func TestKeyTransferPolicyDeleteHandler(t *testing.T) {
 	t.Log("Response: ", string(data))
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusNoContent))
 }
+
 func TestKeyTransferPolicyRetrieveHandler(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	resp := &model.KeyTransferPolicy{}
@@ -154,7 +155,7 @@ func TestKeyTransferPolicySearchHandlerInvalidAcceptHeader(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusUnsupportedMediaType))
 }
 
-func TestKeyTransferPolicyCreateHandler(t *testing.T) {
+func TestKeyTransferPolicyCreateValidSGXData(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	res1 := &model.KeyTransferPolicy{}
 
@@ -204,7 +205,7 @@ func TestKeyTransferPolicyCreateHandler(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusCreated))
 }
 
-func TestKeyTransferPolicyTDXCreateHandler(t *testing.T) {
+func TestKeyTransferPolicyCreateValidTDXData(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	res1 := &model.KeyTransferPolicy{}
 
@@ -252,7 +253,7 @@ func TestKeyTransferPolicyTDXCreateHandler(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusCreated))
 }
 
-func TestKeyTransferPolicyInvalidHeader(t *testing.T) {
+func TestKeyTransferPolicyCreateInvalidContentTypeHeader(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	res1 := &model.KeyTransferPolicy{}
 
@@ -285,7 +286,7 @@ func TestKeyTransferPolicyInvalidHeader(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusUnsupportedMediaType))
 }
 
-func TestKeyTransferPolicyCreateInvalidHeaders(t *testing.T) {
+func TestKeyTransferPolicyCreateInvalidAcceptHeader(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	res1 := &model.KeyTransferPolicy{}
 
@@ -349,7 +350,7 @@ func TestKeyTransferPolicyCreateInvalidContentLength(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
 }
 
-func TestKeyTransferPolicyInvalidReq(t *testing.T) {
+func TestKeyTransferPolicyCreateInvalidRequest(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	res1 := &model.KeyTransferPolicy{}
 
@@ -382,9 +383,30 @@ func TestKeyTransferPolicyInvalidReq(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
 
 	keyJson = `{
-		"attestation_type": [
-		  "TPM"
-		]
+		"attestation_type": "TPM"
+	}`
+
+	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/key-transfer-policies", bytes.NewReader([]byte(keyJson)))
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res = recorder.Result()
+	defer res.Body.Close()
+
+	data, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+
+	t.Log("Response: ", string(data))
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+
+	keyJson = `{
+		"attester_type": "TDX"
 	}`
 
 	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/key-transfer-policies", bytes.NewReader([]byte(keyJson)))
@@ -407,7 +429,7 @@ func TestKeyTransferPolicyInvalidReq(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
 }
 
-func TestCreateKeyTransferPolicyInvalidSGXData(t *testing.T) {
+func TestKeyTransferPolicyCreateInvalidSGXData(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	res1 := &model.KeyTransferPolicy{}
 
@@ -565,7 +587,7 @@ func TestCreateKeyTransferPolicyInvalidSGXData(t *testing.T) {
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
 }
 
-func TestCreateKeyTransferPolicyInvalidTDXData(t *testing.T) {
+func TestKeyTransferPolicyCreateInvalidTDXData(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 	res1 := &model.KeyTransferPolicy{}
 

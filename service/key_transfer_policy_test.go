@@ -9,11 +9,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"intel/kbs/v1/mocks"
+	"intel/kbs/v1/model"
+	"testing"
+
 	"github.com/google/uuid"
 	"github.com/onsi/gomega"
-	"intel/kbs/v1/model"
-	cns "intel/kbs/v1/repository/mocks/constants"
-	"testing"
 )
 
 var transferPolicyId uuid.UUID
@@ -33,13 +34,13 @@ func TestTransferPolicyCreate(t *testing.T) {
                                         "sgx":{
                                            "attributes":{
                                                   "mrsigner":[
-                                                         "` + cns.ValidMrSigner + `"
+                                                         "` + mocks.ValidMrSigner + `"
                                                   ],
                                                   "isvprodid":[
                                                          1
                                                   ],
                                                   "mrenclave":[
-                                                         "` + cns.ValidMrEnclave + `"
+                                                         "` + mocks.ValidMrEnclave + `"
                                                   ],
                                                   "isvsvn":1,
                                                   "client_permissions":[

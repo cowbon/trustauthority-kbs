@@ -9,17 +9,18 @@ package http
 import (
 	"context"
 	"encoding/json"
-	"github.com/go-kit/kit/endpoint"
-	httpTransport "github.com/go-kit/kit/transport/http"
-	"github.com/google/uuid"
-	"github.com/gorilla/mux"
-	log "github.com/sirupsen/logrus"
 	"intel/kbs/v1/config"
 	"intel/kbs/v1/constant"
 	"intel/kbs/v1/model"
 	"intel/kbs/v1/service"
 	"net/http"
 	"strings"
+
+	"github.com/go-kit/kit/endpoint"
+	httpTransport "github.com/go-kit/kit/transport/http"
+	"github.com/google/uuid"
+	"github.com/gorilla/mux"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -197,6 +198,7 @@ func decodeUpdateUserHTTPRequest(_ context.Context, r *http.Request) (interface{
 	}
 
 	if user.Username != "" {
+		// validate username
 		if err = config.ValidateUsername(user.Username); err != nil {
 			log.Error("Invalid input for username")
 			return nil, ErrInvalidRequest

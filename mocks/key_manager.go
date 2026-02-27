@@ -4,20 +4,20 @@
  *   SPDX-License-Identifier: BSD-3-Clause
  */
 
-package keymanager
+package mocks
 
 import (
-	"github.com/stretchr/testify/mock"
-	"intel/kbs/v1/kmipclient"
 	"intel/kbs/v1/model"
+
+	"github.com/stretchr/testify/mock"
 )
 
 type MockKmipManager struct {
-	client kmipclient.MockKmipClient
+	client MockKmipClient
 	mock.Mock
 }
 
-func NewMockKmipManager(c kmipclient.MockKmipClient) *MockKmipManager {
+func NewMockKmipManager(c MockKmipClient) *MockKmipManager {
 	return &MockKmipManager{c, mock.Mock{}}
 }
 func (mock *MockKmipManager) CreateKey(request *model.KeyRequest) (*model.KeyAttributes, error) {

@@ -15,16 +15,18 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	log "github.com/sirupsen/logrus"
 	"intel/kbs/v1/crypt"
 	"time"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/google/uuid"
 
-	"github.com/pkg/errors"
 	"intel/kbs/v1/constant"
 	"intel/kbs/v1/model"
 	"intel/kbs/v1/vaultclient"
+
+	"github.com/pkg/errors"
 )
 
 type VaultManager struct {
@@ -129,14 +131,14 @@ func (vm *VaultManager) RegisterKey(request *model.KeyRequest) (*model.KeyAttrib
 		if request.KeyInfo.Algorithm == constant.CRYPTOALGRSA {
 			rsaKey, ok := private.(*rsa.PrivateKey)
 			if !ok {
-				return nil, errors.Wrap(err, "Private key in request is not RSA key")
+				return nil, errors.New("Private key in request is not RSA key")
 			}
 
 			public = &rsaKey.PublicKey
 		} else {
 			ecKey, ok := private.(*ecdsa.PrivateKey)
 			if !ok {
-				return nil, errors.Wrap(err, "Private key in request is not EC key")
+				return nil, errors.New("Private key in request is not EC key")
 			}
 
 			public = &ecKey.PublicKey
@@ -194,11 +196,12 @@ func (vm *VaultManager) TransferKey(attributes *model.KeyAttributes) ([]byte, er
 		return nil, err
 	}
 
-	if attributes.Algorithm == constant.CRYPTOALGAES {
+	switch attributes.Algorithm {
+	case constant.CRYPTOALGAES:
 		key = keyAttributes.KeyData
-	} else if attributes.Algorithm == constant.CRYPTOALGRSA {
+	case constant.CRYPTOALGRSA:
 		key = keyAttributes.PrivateKey
-	} else {
+	default:
 		key = attributes.PrivateKey
 	}
 

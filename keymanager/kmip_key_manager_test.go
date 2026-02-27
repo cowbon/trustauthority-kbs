@@ -7,20 +7,23 @@
 package keymanager
 
 import (
+	"errors"
 	"testing"
 
-	"github.com/stretchr/testify/mock"
-	"intel/kbs/v1/kmipclient"
+	"intel/kbs/v1/mocks"
 	"intel/kbs/v1/model"
+
+	"github.com/stretchr/testify/mock"
 )
 
 func TestKmipManagerCreateKey(t *testing.T) {
 
 	type args struct {
 		algorithm string
-		curveType string
 		keyLength int
 		funcName  string
+		kmipId    string
+		err       error
 	}
 	tests := []struct {
 		name    string
@@ -33,6 +36,8 @@ func TestKmipManagerCreateKey(t *testing.T) {
 				algorithm: "AES",
 				keyLength: 256,
 				funcName:  "CreateSymmetricKey",
+				kmipId:    "1",
+				err:       nil,
 			},
 			wantErr: false,
 		},
@@ -42,24 +47,35 @@ func TestKmipManagerCreateKey(t *testing.T) {
 				algorithm: "RSA",
 				keyLength: 2048,
 				funcName:  "CreateAsymmetricKeyPair",
+				kmipId:    "1",
+				err:       nil,
 			},
 			wantErr: false,
 		},
 		{
 			name: "negative test - algorithm not supported",
 			args: args{
-				algorithm: "ECBBBB",
-				keyLength: 2048,
-				funcName:  "CreateAsymmetricKeyPair",
+				algorithm: "ECB",
 			},
 			wantErr: true,
 		},
 		{
-			name: "negative test - Curve type not supported",
+			name: "negative test - create symmetric key failure",
 			args: args{
-				algorithm: "EC",
-				curveType: "primeinvalid",
+				algorithm: "AES",
+				keyLength: 256,
+				funcName:  "CreateSymmetricKey",
+				err:       errors.New("failed to create symmetric key"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative test - create asymmetric key failure",
+			args: args{
+				algorithm: "RSA",
+				keyLength: 2048,
 				funcName:  "CreateAsymmetricKeyPair",
+				err:       errors.New("failed to create asymmetric key"),
 			},
 			wantErr: true,
 		},
@@ -70,15 +86,14 @@ func TestKmipManagerCreateKey(t *testing.T) {
 			keyInfo := &model.KeyInfo{
 				Algorithm: tt.args.algorithm,
 				KeyLength: tt.args.keyLength,
-				CurveType: tt.args.curveType,
 			}
 
 			keyRequest := &model.KeyRequest{
 				KeyInfo: keyInfo,
 			}
 
-			mockClient := kmipclient.NewMockKmipClient()
-			mockClient.On(tt.args.funcName, mock.Anything).Return("1", nil)
+			mockClient := mocks.NewMockKmipClient()
+			mockClient.On(tt.args.funcName, mock.Anything).Return(tt.args.kmipId, tt.args.err)
 			keyManager := &KmipManager{mockClient}
 			_, err := keyManager.CreateKey(keyRequest)
 			if (err != nil) != tt.wantErr {
@@ -107,7 +122,7 @@ func TestKmipManagerDeleteKey(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "negative test - key id is empty",
+			name: "negative test - kmipKeyID is empty",
 			args: args{
 				kmipKeyID: "",
 			},
@@ -120,7 +135,7 @@ func TestKmipManagerDeleteKey(t *testing.T) {
 			keyAttributes := &model.KeyAttributes{
 				KmipKeyID: tt.args.kmipKeyID,
 			}
-			mockClient := kmipclient.NewMockKmipClient()
+			mockClient := mocks.NewMockKmipClient()
 			mockClient.On("DeleteKey", mock.Anything).Return(nil)
 			keyManager := &KmipManager{mockClient}
 			err := keyManager.DeleteKey(keyAttributes)
@@ -172,7 +187,7 @@ func TestKmipManagerRegisterKey(t *testing.T) {
 				KeyInfo: keyInfo,
 			}
 
-			mockClient := kmipclient.NewMockKmipClient()
+			mockClient := mocks.NewMockKmipClient()
 			keyManager := &KmipManager{mockClient}
 			_, err := keyManager.RegisterKey(keyRequest)
 			if (err != nil) != tt.wantErr {
@@ -218,6 +233,14 @@ func TestKmipManagerTransferKey(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "negative testing - kmipKeyID is empty",
+			args: args{
+				algorithm: "AES",
+				kmipKeyID: "",
+			},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -227,7 +250,7 @@ func TestKmipManagerTransferKey(t *testing.T) {
 				KmipKeyID: tt.args.kmipKeyID,
 			}
 
-			mockClient := kmipclient.NewMockKmipClient()
+			mockClient := mocks.NewMockKmipClient()
 			mockClient.On("GetKey", mock.Anything).Return([]byte(""), nil)
 			keyManager := &KmipManager{mockClient}
 			_, err := keyManager.TransferKey(keyAttributes)

@@ -4,15 +4,15 @@
 package mocks
 
 import (
-	"github.com/google/uuid"
-	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 	"intel/kbs/v1/repository/directory"
 	"reflect"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
+
 	"intel/kbs/v1/model"
-	cns "intel/kbs/v1/repository/mocks/constants"
 )
 
 // MockKeyTransferPolicyStore provides a mocked implementation of interface domain.KeyTransferPolicyStore
@@ -83,9 +83,9 @@ func NewFakeKeyTransferPolicyStore() *MockKeyTransferPolicyStore {
 		SGX: &model.SgxPolicy{
 			PolicyIds: []uuid.UUID{uuid.MustParse("232bffd9-7ab3-4bb5-bc6c-1852123d1a01")},
 			Attributes: &model.SgxAttributes{
-				MrSigner:           []string{cns.ValidMrSigner},
+				MrSigner:           []string{ValidMrSigner},
 				IsvProductId:       []uint16{0},
-				MrEnclave:          []string{cns.ValidMrEnclave},
+				MrEnclave:          []string{ValidMrEnclave},
 				IsvSvn:             &i,
 				EnforceTCBUptoDate: &falVar,
 			},
@@ -101,9 +101,9 @@ func NewFakeKeyTransferPolicyStore() *MockKeyTransferPolicyStore {
 		AttestationType: model.SGX,
 		SGX: &model.SgxPolicy{
 			Attributes: &model.SgxAttributes{
-				MrSigner:           []string{cns.ValidMrSigner},
+				MrSigner:           []string{ValidMrSigner},
 				IsvProductId:       []uint16{1},
-				MrEnclave:          []string{cns.ValidMrEnclave},
+				MrEnclave:          []string{ValidMrEnclave},
 				IsvSvn:             &i,
 				EnforceTCBUptoDate: nil,
 			},
@@ -121,14 +121,14 @@ func NewFakeKeyTransferPolicyStore() *MockKeyTransferPolicyStore {
 		AttestationType: model.TDX,
 		TDX: &model.TdxPolicy{
 			Attributes: &model.TdxAttributes{
-				MrSignerSeam:       []string{cns.ValidMrSignerSeam},
-				MrSeam:             []string{cns.ValidMrSeam},
+				MrSignerSeam:       []string{ValidMrSignerSeam},
+				MrSeam:             []string{ValidMrSeam},
 				SeamSvn:            &j,
-				MRTD:               []string{cns.ValidMRTD},
-				RTMR0:              cns.ValidRTMR0,
-				RTMR1:              cns.ValidRTMR1,
-				RTMR2:              cns.ValidRTMR2,
-				RTMR3:              cns.ValidRTMR3,
+				MRTD:               []string{ValidMRTD},
+				RTMR0:              ValidRTMR0,
+				RTMR1:              ValidRTMR1,
+				RTMR2:              ValidRTMR2,
+				RTMR3:              ValidRTMR3,
 				EnforceTCBUptoDate: &falVar,
 			},
 		},

@@ -8,13 +8,14 @@ package service
 
 import (
 	"context"
-	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/bcrypt"
 	"intel/kbs/v1/constant"
 	"intel/kbs/v1/model"
 	"net/http"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var log *logrus.Entry
@@ -39,7 +40,7 @@ func (svc service) CreateUser(ctx context.Context, createUserRequest *model.User
 		log.WithError(err).Error("Error search for a user with given filter criteria")
 		return nil, &HandledError{Code: http.StatusInternalServerError, Message: "Error searching for a user with the given name before creating"}
 	} else if len(existingUsers) != 0 {
-		log.Error("Error search for a user with given filter criteria before trying to create a new user. User with same username already exists")
+		log.Error("User with same username already exists")
 		return nil, &HandledError{Code: http.StatusBadRequest, Message: "Error creating a user with the given name"}
 	}
 
