@@ -145,6 +145,7 @@ func (svc service) TransferKeyWithEvidence(_ context.Context, req TransferKeyReq
 
 	tokenClaims := claims.(*model.AttestationTokenClaim)
 	if tokenClaims.AttesterType != transferPolicy.AttestationType {
+		logrus.Error("tokenClaims.AttesterType:", tokenClaims.AttesterType, "transferPolicy.AttestationType:", transferPolicy.AttestationType)
 		logrus.Error("attestation-token is not valid for attestation-type in key-transfer policy")
 		return nil, &HandledError{Code: http.StatusUnauthorized, Message: "attestation-token is not valid for attestation-type in key-transfer policy"}
 	}
