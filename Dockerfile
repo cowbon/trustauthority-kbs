@@ -3,7 +3,7 @@
 
 ARG VERSION=v0.0.0
 
-FROM golang:1.25.7 AS builder
+FROM golang:1.26.1 AS builder
 ARG VERSION
 WORKDIR /app
 COPY . .
