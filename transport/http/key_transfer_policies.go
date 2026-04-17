@@ -163,23 +163,38 @@ func encodeSearchKeyTransferPoliciesHTTPResponse(ctx context.Context, w http.Res
 
 func validateKeyTransferPolicy(policyCreateReq model.KeyTransferPolicy) error {
 
-	if policyCreateReq.AttestationType == "" {
+	if len(policyCreateReq.AttestationType) == 0 {
 		return errors.New("Attestation_type must be specified")
 	}
 
-	if !policyCreateReq.AttestationType.Valid() {
-		return errors.New("Invalid attestation type")
+	seenAttType := map[model.AttesterType]bool{}
+	for _, attType := range policyCreateReq.AttestationType {
+		if !attType.Valid() {
+			return errors.New("Invalid attestation type")
+		}
+		if seenAttType[attType] {
+			return errors.New("Duplicate attestation type is not allowed")
+		}
+		seenAttType[attType] = true
 	}
 
-	if policyCreateReq.AttestationType == model.SGX && policyCreateReq.SGX.Attributes != nil {
+	if seenAttType[model.SGX] && policyCreateReq.SGX != nil && policyCreateReq.SGX.Attributes != nil {
 		if err := validateSGXAttributes(policyCreateReq.SGX.Attributes); err != nil {
 			return errors.Wrap(err, "Input validation failed for SGX Attributes")
 		}
 	}
 
-	if policyCreateReq.AttestationType == model.TDX && policyCreateReq.TDX.Attributes != nil {
+	if seenAttType[model.TDX] && policyCreateReq.TDX != nil && policyCreateReq.TDX.Attributes != nil {
 		if err := validateTDXAttributes(policyCreateReq.TDX.Attributes); err != nil {
 			return errors.Wrap(err, "Input validation failed for TDX Attributes")
+		}
+	}
+
+	if seenAttType[model.NVGPU] && policyCreateReq.NVGPU != nil && policyCreateReq.NVGPU.Attributes != nil {
+		if policyCreateReq.NVGPU.Attributes.HwModel != nil {
+			if err := ValidateStrings(policyCreateReq.NVGPU.Attributes.HwModel); err != nil {
+				return errors.Wrap(err, "Input validation failed for NVGPU hardware models")
+			}
 		}
 	}
 	return nil

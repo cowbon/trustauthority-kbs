@@ -73,7 +73,7 @@ func decodeTransferKeyHTTPRequest(_ context.Context, r *http.Request) (interface
 		}
 
 		if attestType != "" {
-			if attestType != "SGX" && attestType != "TDX" {
+			if attestType != "SGX" && attestType != "TDX" && attestType != "NVGPU" {
 				log.Error(ErrInvalidAttestationType.Error())
 				return nil, ErrInvalidAttestationType
 			}

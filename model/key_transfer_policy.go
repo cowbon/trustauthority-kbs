@@ -7,8 +7,9 @@
 package model
 
 import (
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type KeyTransferPolicy struct {
@@ -22,11 +23,29 @@ type KeyTransferPolicy struct {
 	// Defines if SGX\TDX Attributes need to be part of key Transfer Policy
 	// required: true
 	// example: [ { "SGX" } ]
-	AttestationType AttesterType `json:"attestation_type"`
+	AttestationType AttesterTypes `json:"attestation_type"`
 	// List of SGX Enclave Attributes that are part of Enclave
 	SGX *SgxPolicy `json:"sgx,omitempty"`
 	// List of TDX TD Attributes that are part of TDX Policy
 	TDX *TdxPolicy `json:"tdx,omitempty"`
+	// List of NVIDIA GPU attributes that are part of NVGPU policy
+	NVGPU *NvgpuPolicy `json:"nvgpu,omitempty"`
+}
+
+type NvgpuPolicy struct {
+	// Attributes that define NVIDIA GPU attestation details
+	Attributes *NvgpuAttributes `json:"attributes,omitempty"`
+	// List of Policy IDs which are matched in ITA
+	PolicyIds []uuid.UUID `json:"policy_ids,omitempty"`
+}
+
+type NvgpuAttributes struct {
+	// Require top-level ITA NVGPU summary result to be true
+	EnforceOverallAttestationResult *bool `json:"enforce_overall_attestation_result,omitempty"`
+	// Require each GPU claim detail to have secure boot enabled
+	RequireSecureBoot *bool `json:"require_secure_boot,omitempty"`
+	// Optional list of allowed GPU hardware models
+	HwModel []string `json:"hwmodel,omitempty"`
 }
 
 type SgxPolicy struct {

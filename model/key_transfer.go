@@ -7,6 +7,8 @@
 package model
 
 import (
+	"encoding/json"
+
 	itaConnector "github.com/intel/trustauthority-client/go-connector"
 )
 
@@ -26,6 +28,8 @@ type KeyTransferRequest struct {
 	// Log of all events that get extended to RTMRs (runtime-extendable measurement registers) . RTMR event log is available through ACPI.
 	// example: [ { "rtmr": {  "index":1....
 	EventLog []byte `json:"event_log,omitempty"`
+	// Optional NVGPU evidence payload
+	NVGPU json.RawMessage `json:"nvgpu,omitempty"`
 }
 
 type KeyTransferResponse struct {

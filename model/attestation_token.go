@@ -11,9 +11,108 @@ import (
 	itaConnector "github.com/intel/trustauthority-client/go-connector"
 )
 
+type AttestationTokenV2Claim struct {
+	Appraisal           map[string]interface{}      `json:"appraisal,omitempty"`
+	EatProfile          string                      `json:"eat_profile,omitempty"`
+	IntUse              string                      `json:"intuse,omitempty"`
+	PolicyIdsMatched    []PolicyClaim               `json:"policy_ids_matched,omitempty"`
+	PolicyIdsUnmatched  []PolicyClaim               `json:"policy_ids_unmatched,omitempty"`
+	PolicyDefinedClaims *map[string]interface{}     `json:"policy_defined_claims,omitempty"`
+	TDX                 *AttestationTokenV2TDXClaim `json:"tdx,omitempty"`
+	NVGPU               *AttestationTokenV2NVGPU    `json:"nvgpu,omitempty"`
+	VerifierInstanceIds []uuid.UUID                 `json:"verifier_instance_ids,omitempty"`
+	Version             string                      `json:"ver"`
+}
+
+type AttestationTokenV2Common struct {
+	AttesterHeldData    string       `json:"attester_held_data,omitempty"`
+	AttesterTcbStatus   string       `json:"attester_tcb_status,omitempty"`
+	AttesterType        AttesterType `json:"attester_type,omitempty"`
+	VerifierInstanceIds []uuid.UUID  `json:"verifier_instance_ids,omitempty"`
+}
+
+type AttestationTokenV2TDXClaim struct {
+	AttestationTokenV2Common
+	TDXClaims
+}
+
+type AttestationTokenV2NVGPU struct {
+	AttestationTokenV2Common
+	ClaimDetails            map[string]AttestationTokenV2NVGPUClaimDetail `json:"claim_details,omitempty"`
+	Submods                 map[string]interface{}                        `json:"submods,omitempty"`
+	XNVidiaOverallAttResult bool                                          `json:"x-nvidia-overall-att-result"`
+}
+
+type AttestationTokenV2NVGPUClaimDetail struct {
+	DbgStat string `json:"dbgstat,omitempty"`
+	HwModel string `json:"hwmodel,omitempty"`
+	SecBoot bool   `json:"secboot"`
+	MeasRes string `json:"measres,omitempty"`
+}
+
+func (v2 *AttestationTokenV2Claim) ToAttestationTokenClaim() *AttestationTokenClaim {
+	legacy := &AttestationTokenClaim{
+		EatProfile:          v2.EatProfile,
+		IntUse:              v2.IntUse,
+		PolicyIdsMatched:    v2.PolicyIdsMatched,
+		PolicyIdsUnmatched:  v2.PolicyIdsUnmatched,
+		PolicyDefinedClaims: v2.PolicyDefinedClaims,
+		VerifierInstanceIds: v2.VerifierInstanceIds,
+		Version:             v2.Version,
+	}
+
+	if v2.TDX != nil {
+		tdx := v2.TDX.TDXClaims
+		legacy.TDXClaims = &tdx
+		if legacy.AttesterHeldData == "" {
+			legacy.AttesterHeldData = v2.TDX.AttesterHeldData
+		}
+		if legacy.AttesterTcbStatus == "" {
+			legacy.AttesterTcbStatus = v2.TDX.AttesterTcbStatus
+		}
+		if legacy.AttesterType == "" {
+			if v2.TDX.AttesterType != "" {
+				legacy.AttesterType = v2.TDX.AttesterType
+			} else {
+				legacy.AttesterType = TDX
+			}
+		}
+		if len(legacy.VerifierInstanceIds) == 0 {
+			legacy.VerifierInstanceIds = v2.TDX.VerifierInstanceIds
+		}
+	}
+
+	if v2.NVGPU != nil {
+		if len(v2.NVGPU.ClaimDetails) > 0 {
+			legacy.NVGPUClaimDetails = make(map[string]NVGPUClaimDetail, len(v2.NVGPU.ClaimDetails))
+			for k, d := range v2.NVGPU.ClaimDetails {
+				legacy.NVGPUClaimDetails[k] = NVGPUClaimDetail{
+					DbgStat: d.DbgStat,
+					HwModel: d.HwModel,
+					SecBoot: d.SecBoot,
+					MeasRes: d.MeasRes,
+				}
+			}
+		}
+		overall := v2.NVGPU.XNVidiaOverallAttResult
+		legacy.NVGPUOverallAttResult = &overall
+		if legacy.AttesterType == "" {
+			if v2.NVGPU.AttesterType != "" {
+				legacy.AttesterType = v2.NVGPU.AttesterType
+			} else {
+				legacy.AttesterType = NVGPU
+			}
+		}
+	}
+
+	return legacy
+}
+
 type AttestationTokenClaim struct {
 	*SGXClaims
 	*TDXClaims
+	NVGPUClaimDetails     map[string]NVGPUClaimDetail     `json:"nvgpu_claim_details,omitempty"`
+	NVGPUOverallAttResult *bool                            `json:"x-nvidia-overall-att-result,omitempty"`
 	AttesterHeldData    string                      `json:"attester_held_data,omitempty"` // Is this finalized?
 	AttesterInittime    map[string]interface{}      `json:"attester_inittime_data,omitempty"`
 	AttesterRuntime     map[string]interface{}      `json:"attester_runtime_data,omitempty"`
@@ -29,6 +128,13 @@ type AttestationTokenClaim struct {
 	EatProfile          string                      `json:"eat_profile,omitempty"` // EAT claims
 	IntUse              string                      `json:"intuse,omitempty"`      // EAT claims
 	Version             string                      `json:"ver"`
+}
+
+type NVGPUClaimDetail struct {
+	DbgStat string `json:"dbgstat,omitempty"`
+	HwModel string `json:"hwmodel,omitempty"`
+	SecBoot bool   `json:"secboot"`
+	MeasRes string `json:"measres,omitempty"`
 }
 
 type SGXClaims struct {

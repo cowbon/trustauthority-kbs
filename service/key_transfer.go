@@ -7,6 +7,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -15,11 +16,14 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"encoding/pem"
 	"hash"
 	"io"
 	"math/big"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"intel/kbs/v1/constant"
@@ -50,6 +54,23 @@ type TransferKeyResponse struct {
 	AttestationType     string
 	Nonce               *itaConnector.VerifierNonce
 	KeyTransferResponse *model.KeyTransferResponse
+}
+
+type itaV2EvidenceTDX struct {
+	Quote         []byte                      `json:"quote,omitempty"`
+	VerifierNonce *itaConnector.VerifierNonce `json:"verifier_nonce,omitempty"`
+	RuntimeData   []byte                      `json:"runtime_data,omitempty"`
+	EventLog      []byte                      `json:"event_log,omitempty"`
+}
+
+type itaV2AttestRequest struct {
+	PolicyIds []uuid.UUID       `json:"policy_ids,omitempty"`
+	TDX       *itaV2EvidenceTDX `json:"tdx,omitempty"`
+	NVGPU     json.RawMessage   `json:"nvgpu,omitempty"`
+}
+
+type itaV2AttestResponse struct {
+	Token string `json:"token"`
 }
 
 func (mw loggingMiddleware) TransferKeyWithEvidence(ctx context.Context, req TransferKeyRequest) (*TransferKeyResponse, error) {
@@ -95,7 +116,7 @@ func (svc service) TransferKeyWithEvidence(_ context.Context, req TransferKeyReq
 
 			resp := &TransferKeyResponse{
 				Nonce:               nonceResp.Nonce,
-				AttestationType:     transferPolicy.AttestationType.String(),
+				AttestationType:     transferPolicy.AttestationType.First().String(),
 				KeyTransferResponse: nil,
 			}
 			return resp, nil
@@ -103,19 +124,11 @@ func (svc service) TransferKeyWithEvidence(_ context.Context, req TransferKeyReq
 			token = req.KeyTransferRequest.AttestationToken
 		}
 	} else {
-		if req.AttestationType != transferPolicy.AttestationType.String() {
+		if !transferPolicy.AttestationType.Contains(model.AttesterType(req.AttestationType)) {
 			logrus.Error("attestation-type in request header does not match with attestation-type in key-transfer policy")
 			return nil, &HandledError{Code: http.StatusUnauthorized, Message: "attestation-type in request header does not match with attestation-type in key-transfer policy"}
 		}
-
-		var policyIds []uuid.UUID
-		switch transferPolicy.AttestationType {
-		case model.SGX:
-			policyIds = transferPolicy.SGX.PolicyIds
-
-		case model.TDX:
-			policyIds = transferPolicy.TDX.PolicyIds
-		}
+		policyIds := getPolicyIDsForAttestationTypes(transferPolicy)
 
 		evidence := itaConnector.Evidence{
 			Evidence: req.KeyTransferRequest.Quote,
@@ -128,13 +141,20 @@ func (svc service) TransferKeyWithEvidence(_ context.Context, req TransferKeyReq
 			PolicyIds: policyIds,
 			RequestId: itaRequestID,
 		}
-
-		tokenResp, err := svc.itaApiClient.GetToken(tokenRequest)
-		if err != nil {
-			logrus.WithError(err).Error("Error retrieving token from Trust Authority service")
-			return nil, &HandledError{Code: http.StatusBadGateway, Message: "Error retrieving token from Trust Authority service"}
+		if len(req.KeyTransferRequest.NVGPU) > 0 {
+			token, err = svc.getTokenV2(tokenRequest, req.KeyTransferRequest.NVGPU)
+			if err != nil {
+				logrus.WithError(err).Error("Error retrieving v2 token from Trust Authority service")
+				return nil, &HandledError{Code: http.StatusBadGateway, Message: "Error retrieving token from Trust Authority service"}
+			}
+		} else {
+			tokenResp, err := svc.itaApiClient.GetToken(tokenRequest)
+			if err != nil {
+				logrus.WithError(err).Error("Error retrieving token from Trust Authority service")
+				return nil, &HandledError{Code: http.StatusBadGateway, Message: "Error retrieving token from Trust Authority service"}
+			}
+			token = tokenResp.Token
 		}
-		token = tokenResp.Token
 	}
 
 	claims, err := svc.authenticateToken(token)
@@ -144,11 +164,6 @@ func (svc service) TransferKeyWithEvidence(_ context.Context, req TransferKeyReq
 	}
 
 	tokenClaims := claims.(*model.AttestationTokenClaim)
-	if tokenClaims.AttesterType != transferPolicy.AttestationType {
-		logrus.Error("tokenClaims.AttesterType:", tokenClaims.AttesterType, "transferPolicy.AttestationType:", transferPolicy.AttestationType)
-		logrus.Error("attestation-token is not valid for attestation-type in key-transfer policy")
-		return nil, &HandledError{Code: http.StatusUnauthorized, Message: "attestation-token is not valid for attestation-type in key-transfer policy"}
-	}
 
 	transferResponse, httpStatus, err := svc.validateClaimsAndGetKey(tokenClaims, transferPolicy, key.KeyInfo.Algorithm, tokenClaims.AttesterHeldData, req.KeyId)
 	if err != nil {
@@ -161,7 +176,125 @@ func (svc service) TransferKeyWithEvidence(_ context.Context, req TransferKeyReq
 	return resp, nil
 }
 
+func getPolicyIDsForAttestationTypes(transferPolicy *model.KeyTransferPolicy) []uuid.UUID {
+	ids := make([]uuid.UUID, 0)
+	seen := make(map[uuid.UUID]bool)
+
+	for _, attType := range transferPolicy.AttestationType {
+		var source []uuid.UUID
+		switch attType {
+		case model.SGX:
+			if transferPolicy.SGX != nil {
+				source = transferPolicy.SGX.PolicyIds
+			}
+		case model.TDX:
+			if transferPolicy.TDX != nil {
+				source = transferPolicy.TDX.PolicyIds
+			}
+		case model.NVGPU:
+			if transferPolicy.NVGPU != nil {
+				source = transferPolicy.NVGPU.PolicyIds
+			}
+		}
+
+		for _, id := range source {
+			if !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+
+	return ids
+}
+
+func (svc service) getTokenV2(tokenRequest itaConnector.GetTokenArgs, nvgpu json.RawMessage) (string, error) {
+	v2URL, err := buildITAV2EndpointURL(svc.config.TrustAuthorityApiUrl, "/attest")
+	if err != nil {
+		return "", err
+	}
+
+	body := &itaV2AttestRequest{
+		PolicyIds: tokenRequest.PolicyIds,
+		NVGPU:     nvgpu,
+	}
+
+	if tokenRequest.Evidence != nil {
+		body.TDX = &itaV2EvidenceTDX{
+			Quote:         tokenRequest.Evidence.Evidence,
+			VerifierNonce: tokenRequest.Nonce,
+			RuntimeData:   tokenRequest.Evidence.UserData,
+			EventLog:      tokenRequest.Evidence.EventLog,
+		}
+	}
+
+	reqBytes, err := json.Marshal(body)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, v2URL, bytes.NewBuffer(reqBytes))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-api-key", svc.config.TrustAuthorityApiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", errors.Errorf("unexpected ITA v2 attest status: %d", resp.StatusCode)
+	}
+
+	var tokenResp itaV2AttestResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", err
+	}
+
+	if strings.TrimSpace(tokenResp.Token) == "" {
+		return "", errors.New("ITA v2 attest response token is empty")
+	}
+
+	return tokenResp.Token, nil
+}
+
+func buildITAV2EndpointURL(baseURL string, resourcePath string) (string, error) {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return "", err
+	}
+
+	basePath := strings.TrimSuffix(u.Path, "/")
+	if strings.HasSuffix(basePath, "/v1") {
+		basePath = strings.TrimSuffix(basePath, "/v1") + "/v2"
+	} else if !strings.HasSuffix(basePath, "/v2") {
+		basePath += "/v2"
+	}
+
+	u.Path = basePath + resourcePath
+	return u.String(), nil
+}
+
 func (svc service) authenticateToken(token string) (interface{}, error) {
+	version := detectTokenVersion(token)
+	if strings.HasPrefix(version, "2") {
+		claimsV2 := &model.AttestationTokenV2Claim{}
+		jwtToken, err := svc.itaTokenVerifierClient.VerifyToken(token)
+		if err != nil {
+			return nil, errors.Wrap(err, "Error while verifying the token")
+		}
+
+		_, err = crypt.GetTokenClaims(jwtToken, token, &claimsV2)
+		if err != nil {
+			return nil, errors.Wrap(err, "Error while parsing the token claims")
+		}
+		return claimsV2.ToAttestationTokenClaim(), nil
+	}
 
 	claims := &model.AttestationTokenClaim{}
 	jwtToken, err := svc.itaTokenVerifierClient.VerifyToken(token)
@@ -176,6 +309,28 @@ func (svc service) authenticateToken(token string) (interface{}, error) {
 	return claims, nil
 }
 
+func detectTokenVersion(token string) string {
+	parts := strings.Split(strings.TrimSpace(token), ".")
+	if len(parts) < 2 {
+		return ""
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+
+	var body struct {
+		Version string `json:"ver"`
+	}
+
+	if err := json.Unmarshal(payload, &body); err != nil {
+		return ""
+	}
+
+	return body.Version
+}
+
 func (svc service) validateClaimsAndGetKey(tokenClaims *model.AttestationTokenClaim, transferPolicy *model.KeyTransferPolicy, keyAlgorithm, userData string, keyId uuid.UUID) (interface{}, int, error) {
 
 	err := validateAttestationTokenClaims(tokenClaims, transferPolicy)
@@ -184,7 +339,7 @@ func (svc service) validateClaimsAndGetKey(tokenClaims *model.AttestationTokenCl
 		return nil, http.StatusUnauthorized, &HandledError{Message: "Token claims validation against key-transfer-policy failed"}
 	}
 
-	return svc.getWrappedKey(keyAlgorithm, userData, keyId, transferPolicy.AttestationType)
+	return svc.getWrappedKey(keyAlgorithm, userData, keyId, transferPolicy.AttestationType.First())
 }
 
 func (svc service) getWrappedKey(keyAlgorithm, userData string, id uuid.UUID, attesterType model.AttesterType) (interface{}, int, error) {
@@ -283,9 +438,16 @@ func (svc service) getWrappedKey(keyAlgorithm, userData string, id uuid.UUID, at
 
 func getPublicKey(userData string, attesterType model.AttesterType) (*rsa.PublicKey, error) {
 
+	if strings.TrimSpace(userData) == "" {
+		return nil, errors.New("attester held data is missing")
+	}
+
 	key, err := base64.StdEncoding.DecodeString(userData)
 	if err != nil {
 		return nil, errors.New("failed to decode user data")
+	}
+	if len(key) < 5 {
+		return nil, errors.New("invalid user data: public key payload too short")
 	}
 
 	modArr := key[4:]
