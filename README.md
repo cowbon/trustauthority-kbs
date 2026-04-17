@@ -145,14 +145,15 @@ Note that when running with the OCI key manager, it is necessary to map the OCI 
 
     ```bash
     docker run -d \
+      -u root \
       --restart unless-stopped \
       --name kbs \
       --env-file kbs.env \
-      -p 5443:9443 \
+      -p 9443:9443 \
       -v /etc/kbs/certs:/etc/kbs/certs \
       -v /opt/kbs:/opt/kbs \
-      -v ~/.oci:/home/kbs/.oci \
-      trustauthority/key-broker-service:v1.2.0
+      -v ~/.oci:/root/.oci \
+      trustauthority/key-broker-service:v1.3.0
     ```
 
 ### Build the KBS
@@ -256,6 +257,8 @@ Creates a JWT for the user specified in the request.
 
 Use the "admin" token to create key transfer policies by defining the rules to retrieve the keys from the backend KMS (KMIP).
 
+URL: POST /kbs/v1/token
+
 ***Example request body***
 
 ```bash
@@ -278,6 +281,8 @@ Creates a key transfer policy. Only one SGX or TDX key transfer policy can be cr
 - by providing only a list of policy-ids 
 - by providing only TDX or SGX attributes 
 - by providing both a list of policy-ids and TDX or SGX attributes
+
+URL: POST /kbs/v1/key-transfer-policies 
 
 ***Example SGX policy***
 
@@ -317,13 +322,33 @@ Creates a key transfer policy. Only one SGX or TDX key transfer policy can be cr
 	}
 ```
 
+***sample shell script to invoke the API***
+```bash
+#!/bin/bash
+
+TOKEN=`curl -X POST https://localhost:9443/kbs/v1/token \
+            -H "Accept: application/jwt" \
+            -H "Content-Type: application/json" \
+            --data '{"username":"admin", "password":"test4oel123"}' \
+            --insecure`
+
+curl -X POST https://localhost:9443/kbs/v1/key-transfer-policies \
+        -H "Accept: application/json" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $TOKEN" \
+        --data '{"attestation_type":["TDX", "NVGPU"], "tdx":{"attributes":{"seamsvn":270}}, "nvgpu":{"policy_ids":["9a7b48a5-c275-42ae-a733-193cfd5649be"]}}' \
+        --insecure
+```
+
 ### Create a key
 
-Use the Keys API to create new keys and provide the key-transfer-policy ID in the POST request.
+Use the Keys API to create new keys and provide the key-transfer-policy ID in the POST request. For OCI KMS, specifying `oci_information` is required. Please refer to the example below.
 
 #### POST /keys
 
 Creates or Registers a key.
+
+URL: POST /kbs/v1/keys
 
 ***Request body for key creation***
 
@@ -336,6 +361,26 @@ Creates or Registers a key.
 "transfer_policy_id" : "0855be44-45bd-4ff3-b545-7987e6a1c36b"
 }
 ```
+
+***Request body for key creation using OCI KMS***
+
+```bash
+{"key_information":
+{
+"algorithm": "RSA",
+"key_length": 3072
+},
+"oci_information":
+{
+"compartment_id": <OCID>,
+"key_id": <OCID>,
+"vault_id": <OCID>,
+"secret_name": <string>
+},
+"transfer_policy_id" : "0855be44-45bd-4ff3-b545-7987e6a1c36b"
+}
+```
+`secret_name` is the name of the secret to be created. The API returns an error if a secret with the same name exists in the same vault. To reuse the created secret, replace `secret_name` with `secret_id` and set the value to the OCID of the desired secret.
 
 ### Retrieve the key 
 
