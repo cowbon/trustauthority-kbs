@@ -270,6 +270,7 @@ func buildITAV2EndpointURL(baseURL string, resourcePath string) (string, error) 
 		return "", err
 	}
 
+	u = u.JoinPath("appraisal")
 	basePath := strings.TrimSuffix(u.Path, "/")
 	if strings.HasSuffix(basePath, "/v1") {
 		basePath = strings.TrimSuffix(basePath, "/v1") + "/v2"
