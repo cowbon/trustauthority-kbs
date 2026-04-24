@@ -201,6 +201,16 @@ func TestKeyTransferWithoutEvidence(t *testing.T) {
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 }
 
+func TestGetPublicKey_WithMissingAttesterHeldData_ReturnsError(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	publicKey, err := getPublicKey("", model.TDX)
+
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.Equal("attester held data is missing or invalid"))
+	g.Expect(publicKey).To(gomega.BeNil())
+}
+
 // ParseJWTToken parses a JWT token string and returns a jwt.Token object.
 func parseJWTToken(tokenString string, secretKey []byte) *jwtlib.Token {
 	token, _ := jwtlib.Parse(tokenString, func(token *jwtlib.Token) (interface{}, error) {

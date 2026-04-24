@@ -21,24 +21,38 @@ func validateAttestationTokenClaims(tokenClaims *model.AttestationTokenClaim, tr
 
 	switch transferPolicy.AttestationType {
 	case model.SGX:
-		if tokenClaims.PolicyIdsMatched != nil && transferPolicy.SGX.PolicyIds != nil {
-			if isPolicyIdMatched(tokenClaims.PolicyIdsMatched, transferPolicy.SGX.PolicyIds) {
-				return nil
-			} else {
+		if transferPolicy.SGX == nil {
+			return errors.New("sgx policy details missing from key-transfer policy")
+		}
+		if transferPolicy.SGX.PolicyIds != nil {
+			if !isPolicyIdMatched(tokenClaims.PolicyIdsMatched, transferPolicy.SGX.PolicyIds) {
 				return errors.New("None of the policy-id in token claim policy_ids_matched matched with policy_ids attribute in key-transfer policy")
 			}
 		}
-		return validateSGXTokenClaims(tokenClaims, transferPolicy.SGX.Attributes)
+		if transferPolicy.SGX.Attributes != nil {
+			if tokenClaims.SGXClaims == nil {
+				return errors.New("sgx attributes missing from attestation token")
+			}
+			return validateSGXTokenClaims(tokenClaims, transferPolicy.SGX.Attributes)
+		}
+		return nil
 
 	case model.TDX:
-		if tokenClaims.PolicyIdsMatched != nil && transferPolicy.TDX.PolicyIds != nil {
-			if isPolicyIdMatched(tokenClaims.PolicyIdsMatched, transferPolicy.TDX.PolicyIds) {
-				return nil
-			} else {
-				return errors.New("None of the policy-id in token claim policy_ids_matched matched with policy_ids_matched attribute in key-transfer policy")
+		if transferPolicy.TDX == nil {
+			return errors.New("tdx policy details missing from key-transfer policy")
+		}
+		if transferPolicy.TDX.PolicyIds != nil {
+			if !isPolicyIdMatched(tokenClaims.PolicyIdsMatched, transferPolicy.TDX.PolicyIds) {
+				return errors.New("None of the policy-id in token claim policy_ids_matched matched with policy_ids attribute in key-transfer policy")
 			}
 		}
-		return validateTDXTokenClaims(tokenClaims, transferPolicy.TDX.Attributes)
+		if transferPolicy.TDX.Attributes != nil {
+			if tokenClaims.TDXClaims == nil {
+				return errors.New("tdx attributes missing from attestation token")
+			}
+			return validateTDXTokenClaims(tokenClaims, transferPolicy.TDX.Attributes)
+		}
+		return nil
 
 	default:
 		return errors.New("Unsupported attestation-type")

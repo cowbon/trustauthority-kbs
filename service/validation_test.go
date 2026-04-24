@@ -64,7 +64,8 @@ func TestValidateAttestationTokenClaimsSGX(t *testing.T) {
 
 	json.Unmarshal([]byte(policyReqJsonStr), transferPolicy)
 	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
-	g.Expect(err).NotTo(gomega.HaveOccurred())
+	// policy_ids are configured in policy but token has no PolicyIdsMatched: must fail (conjunctive enforcement)
+	g.Expect(err).To(gomega.HaveOccurred())
 
 	tokenClaims = &model.AttestationTokenClaim{
 		SGXClaims: &model.SGXClaims{
@@ -149,7 +150,8 @@ func TestValidateAttestationTokenClaimsSGX(t *testing.T) {
 	}
 
 	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
-	g.Expect(err).NotTo(gomega.HaveOccurred())
+	// policy_ids match but token has no SGX claims; attrs are configured: must fail (conjunctive enforcement)
+	g.Expect(err).To(gomega.HaveOccurred())
 
 	tokenClaims = &model.AttestationTokenClaim{
 		PolicyIdsMatched: []model.PolicyClaim{},
@@ -212,7 +214,8 @@ func TestValidateAttestationTokenClaimsTDX(t *testing.T) {
 
 	json.Unmarshal([]byte(policyReqJsonStr), transferPolicy)
 	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
-	g.Expect(err).NotTo(gomega.HaveOccurred())
+	// policy_ids are configured in policy but token has no PolicyIdsMatched: must fail (conjunctive enforcement)
+	g.Expect(err).To(gomega.HaveOccurred())
 
 	tokenClaims = &model.AttestationTokenClaim{
 		TDXClaims: &model.TDXClaims{
@@ -393,12 +396,181 @@ func TestValidateAttestationTokenClaimsTDX(t *testing.T) {
 	}
 
 	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
-	g.Expect(err).NotTo(gomega.HaveOccurred())
+	// policy_ids match but token has no TDX claims; attrs are configured: must fail (conjunctive enforcement)
+	g.Expect(err).To(gomega.HaveOccurred())
 
 	tokenClaims = &model.AttestationTokenClaim{
 		PolicyIdsMatched: []model.PolicyClaim{},
 	}
 
+	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
+	g.Expect(err).To(gomega.HaveOccurred())
+}
+
+// TestValidateAttestationTokenClaimsSGXMixedPolicy verifies that when a key-transfer policy
+// specifies both policy_ids and SGX attributes, BOTH must be satisfied conjunctively.
+func TestValidateAttestationTokenClaimsSGXMixedPolicy(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	mixedPolicyJSON := `{
+		"id": "3b9d565a-6ff5-4e5a-a0a8-64f3183d1722",
+		"attestation_type": "SGX",
+		"sgx": {
+			"attributes": {
+				"mrsigner":  ["` + cns.ValidMrSigner + `"],
+				"isvprodid": [1],
+				"mrenclave": ["` + cns.ValidMrEnclave + `"],
+				"isvsvn":    1,
+				"enforce_tcb_upto_date": false
+			},
+			"policy_ids": ["4517534b-a758-4447-7d2f-3e5606152ed6"]
+		}
+	}`
+
+	transferPolicy := &model.KeyTransferPolicy{}
+	json.Unmarshal([]byte(mixedPolicyJSON), transferPolicy)
+
+	// Case 1: matching policy_id AND valid SGX attributes — should succeed.
+	tokenClaims := &model.AttestationTokenClaim{
+		SGXClaims: &model.SGXClaims{
+			SgxMrEnclave: cns.ValidMrEnclave,
+			SgxMrSigner:  cns.ValidMrSigner,
+			SgxIsvProdId: oneVal,
+			SgxIsvSvn:    oneVal,
+		},
+		PolicyIdsMatched: []model.PolicyClaim{
+			{Id: uuid.MustParse("4517534b-a758-4447-7d2f-3e5606152ed6"), Version: "v1"},
+		},
+		AttesterTcbStatus: "OK",
+		AttesterType:      "SGX",
+		Version:           "1",
+	}
+	err := validateAttestationTokenClaims(tokenClaims, transferPolicy)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	// Case 2: matching policy_id BUT wrong mrenclave — should fail.
+	// This is the reported vulnerability: policy_id match must NOT short-circuit attribute validation.
+	tokenClaims = &model.AttestationTokenClaim{
+		SGXClaims: &model.SGXClaims{
+			SgxMrEnclave: "badbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadb",
+			SgxMrSigner:  cns.ValidMrSigner,
+			SgxIsvProdId: oneVal,
+			SgxIsvSvn:    oneVal,
+		},
+		PolicyIdsMatched: []model.PolicyClaim{
+			{Id: uuid.MustParse("4517534b-a758-4447-7d2f-3e5606152ed6"), Version: "v1"},
+		},
+		AttesterTcbStatus: "OK",
+		AttesterType:      "SGX",
+		Version:           "1",
+	}
+	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
+	g.Expect(err).To(gomega.HaveOccurred())
+
+	// Case 3: valid SGX attributes BUT no policy_id match — should fail.
+	tokenClaims = &model.AttestationTokenClaim{
+		SGXClaims: &model.SGXClaims{
+			SgxMrEnclave: cns.ValidMrEnclave,
+			SgxMrSigner:  cns.ValidMrSigner,
+			SgxIsvProdId: oneVal,
+			SgxIsvSvn:    oneVal,
+		},
+		AttesterTcbStatus: "OK",
+		AttesterType:      "SGX",
+		Version:           "1",
+	}
+	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
+	g.Expect(err).To(gomega.HaveOccurred())
+}
+
+// TestValidateAttestationTokenClaimsTDXMixedPolicy verifies that when a key-transfer policy
+// specifies both policy_ids and TDX attributes, BOTH must be satisfied conjunctively.
+func TestValidateAttestationTokenClaimsTDXMixedPolicy(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	mixedPolicyJSON := `{
+		"id": "3b9d565a-6ff5-4e5a-a0a8-64f3183d1722",
+		"attestation_type": "TDX",
+		"tdx": {
+			"attributes": {
+				"mrsignerseam": ["` + cns.ValidMrSignerSeam + `"],
+				"mrseam":       ["` + cns.ValidMrSeam + `"],
+				"seamsvn":      0,
+				"mrtd":         ["` + cns.ValidMRTD + `"],
+				"rtmr0": "` + cns.ValidRTMR0 + `",
+				"rtmr1": "` + cns.ValidRTMR1 + `",
+				"rtmr2": "` + cns.ValidRTMR2 + `",
+				"rtmr3": "` + cns.ValidRTMR3 + `",
+				"enforce_tcb_upto_date": false
+			},
+			"policy_ids": ["4517534b-a758-4447-7d2f-3e5606152ed6"]
+		}
+	}`
+
+	transferPolicy := &model.KeyTransferPolicy{}
+	json.Unmarshal([]byte(mixedPolicyJSON), transferPolicy)
+
+	// Case 1: matching policy_id AND valid TDX attributes — should succeed.
+	tokenClaims := &model.AttestationTokenClaim{
+		TDXClaims: &model.TDXClaims{
+			TdxMrSeam:       cns.ValidMrSeam,
+			TdxMrSignerSeam: cns.ValidMrSignerSeam,
+			TdxMRTD:         cns.ValidMRTD,
+			TdxRTMR0:        cns.ValidRTMR0,
+			TdxRTMR1:        cns.ValidRTMR1,
+			TdxRTMR2:        cns.ValidRTMR2,
+			TdxRTMR3:        cns.ValidRTMR3,
+			TdxSeamSvn:      zeroVal,
+		},
+		PolicyIdsMatched: []model.PolicyClaim{
+			{Id: uuid.MustParse("4517534b-a758-4447-7d2f-3e5606152ed6"), Version: "v1"},
+		},
+		AttesterTcbStatus: "OK",
+		AttesterType:      "TDX",
+		Version:           "1",
+	}
+	err := validateAttestationTokenClaims(tokenClaims, transferPolicy)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	// Case 2: matching policy_id BUT wrong mrseam — should fail.
+	// This is the reported vulnerability: policy_id match must NOT short-circuit attribute validation.
+	tokenClaims = &model.AttestationTokenClaim{
+		TDXClaims: &model.TDXClaims{
+			TdxMrSeam:       "badbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbadbad",
+			TdxMrSignerSeam: cns.ValidMrSignerSeam,
+			TdxMRTD:         cns.ValidMRTD,
+			TdxRTMR0:        cns.ValidRTMR0,
+			TdxRTMR1:        cns.ValidRTMR1,
+			TdxRTMR2:        cns.ValidRTMR2,
+			TdxRTMR3:        cns.ValidRTMR3,
+			TdxSeamSvn:      zeroVal,
+		},
+		PolicyIdsMatched: []model.PolicyClaim{
+			{Id: uuid.MustParse("4517534b-a758-4447-7d2f-3e5606152ed6"), Version: "v1"},
+		},
+		AttesterTcbStatus: "OK",
+		AttesterType:      "TDX",
+		Version:           "1",
+	}
+	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
+	g.Expect(err).To(gomega.HaveOccurred())
+
+	// Case 3: valid TDX attributes BUT no policy_id match — should fail.
+	tokenClaims = &model.AttestationTokenClaim{
+		TDXClaims: &model.TDXClaims{
+			TdxMrSeam:       cns.ValidMrSeam,
+			TdxMrSignerSeam: cns.ValidMrSignerSeam,
+			TdxMRTD:         cns.ValidMRTD,
+			TdxRTMR0:        cns.ValidRTMR0,
+			TdxRTMR1:        cns.ValidRTMR1,
+			TdxRTMR2:        cns.ValidRTMR2,
+			TdxRTMR3:        cns.ValidRTMR3,
+			TdxSeamSvn:      zeroVal,
+		},
+		AttesterTcbStatus: "OK",
+		AttesterType:      "TDX",
+		Version:           "1",
+	}
 	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
 	g.Expect(err).To(gomega.HaveOccurred())
 }
@@ -416,4 +588,16 @@ func TestValidateAttestationTokenClaims(t *testing.T) {
 	json.Unmarshal([]byte(policyReqJsonStr), transferPolicy)
 	err := validateAttestationTokenClaims(tokenClaims, transferPolicy)
 	g.Expect(err).To(gomega.HaveOccurred())
+
+	// SGX attestation_type with no sgx object must return an explicit error, not panic.
+	transferPolicy = &model.KeyTransferPolicy{AttestationType: model.SGX}
+	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring("sgx policy details missing"))
+
+	// TDX attestation_type with no tdx object must return an explicit error, not panic.
+	transferPolicy = &model.KeyTransferPolicy{AttestationType: model.TDX}
+	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring("tdx policy details missing"))
 }

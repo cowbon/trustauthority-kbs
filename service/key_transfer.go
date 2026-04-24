@@ -286,6 +286,9 @@ func getPublicKey(userData string, attesterType model.AttesterType) (*rsa.Public
 	if err != nil {
 		return nil, errors.New("failed to decode user data")
 	}
+	if len(key) < 5 {
+		return nil, errors.New("attester held data is missing or invalid")
+	}
 
 	modArr := key[4:]
 	var eb uint32

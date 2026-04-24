@@ -81,7 +81,6 @@ func NewFakeKeyTransferPolicyStore() *MockKeyTransferPolicyStore {
 		CreatedAt:       time.Now().UTC(),
 		AttestationType: model.SGX,
 		SGX: &model.SgxPolicy{
-			PolicyIds: []uuid.UUID{uuid.MustParse("232bffd9-7ab3-4bb5-bc6c-1852123d1a01")},
 			Attributes: &model.SgxAttributes{
 				MrSigner:           []string{ValidMrSigner},
 				IsvProductId:       []uint16{0},
