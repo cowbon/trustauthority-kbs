@@ -1,7 +1,7 @@
 // Copyright(C) 2023 Intel Corporation. All Rights Reserved.
 module intel/kbs/v1
 
-go 1.26.1
+go 1.26.2
 
 require (
 	github.com/gemalto/kmip-go v0.0.6
@@ -10,7 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.1
-	github.com/hashicorp/vault/api v1.16.0
+	github.com/hashicorp/vault/api v1.23.0
 	github.com/intel/trustauthority-client v1.1.0
 	github.com/onsi/gomega v1.27.10
 	github.com/pkg/errors v0.9.1
@@ -20,7 +20,7 @@ require (
 	github.com/spf13/viper v1.18.2
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/crypto v0.45.0
-	golang.org/x/time v0.5.0
+	golang.org/x/time v0.12.0
 )
 
 require (
@@ -33,21 +33,20 @@ require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gemalto/flume v0.13.1 // indirect
 	github.com/go-errors/errors v1.5.0 // indirect
-	github.com/go-jose/go-jose/v4 v4.0.5 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
-	github.com/go-test/deep v1.1.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
-	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7 // indirect
+	github.com/hashicorp/go-secure-stdlib/parseutil v0.2.0 // indirect
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
-	github.com/hashicorp/go-sockaddr v1.0.4 // indirect
-	github.com/hashicorp/hcl v1.0.1-vault-5 // indirect
+	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
+	github.com/hashicorp/hcl v1.0.1-vault-7 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.2 // indirect
 	github.com/lestrrat-go/httpcc v1.0.1 // indirect
 	github.com/lestrrat-go/httprc v1.0.5 // indirect
@@ -55,7 +54,7 @@ require (
 	github.com/lestrrat-go/jwx/v2 v2.0.21 // indirect
 	github.com/lestrrat-go/option v1.0.1 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
