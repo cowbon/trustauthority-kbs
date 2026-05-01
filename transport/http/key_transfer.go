@@ -1,5 +1,5 @@
 /*
- *   Copyright (c) 2024 Intel Corporation
+ *   Copyright (c) 2024-2026 Intel Corporation
  *   All rights reserved.
  *   SPDX-License-Identifier: BSD-3-Clause
  */
@@ -73,7 +73,8 @@ func decodeTransferKeyHTTPRequest(_ context.Context, r *http.Request) (interface
 		}
 
 		if attestType != "" {
-			if attestType != "SGX" && attestType != "TDX" {
+			at := model.AttesterType(attestType)
+			if at != model.SGX && at != model.TDX {
 				log.Error(ErrInvalidAttestationType.Error())
 				return nil, ErrInvalidAttestationType
 			}

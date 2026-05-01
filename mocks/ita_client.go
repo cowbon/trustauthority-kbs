@@ -7,7 +7,9 @@
 package mocks
 
 import (
-	"github.com/golang-jwt/jwt/v4"
+	"crypto/x509"
+
+	"github.com/golang-jwt/jwt/v5"
 	itaConnector "github.com/intel/trustauthority-client/go-connector"
 	"github.com/stretchr/testify/mock"
 )
@@ -26,6 +28,18 @@ func NewMockClient() *MockClient {
 func (m *MockClient) VerifyToken(token string) (*jwt.Token, error) {
 	args := m.Called(token)
 	return args.Get(0).(*jwt.Token), args.Error(1)
+}
+
+// AttestEvidence mocks base method
+func (m *MockClient) AttestEvidence(evidence interface{}, cloudProvider string, reqId string) (itaConnector.AttestResponse, error) {
+	args := m.Called(evidence, cloudProvider, reqId)
+	return args.Get(0).(itaConnector.AttestResponse), args.Error(1)
+}
+
+// GetAKCertificate mocks base method
+func (m *MockClient) GetAKCertificate(ekCert *x509.Certificate, akTpmtPublic []byte) ([]byte, []byte, []byte, error) {
+	args := m.Called(ekCert, akTpmtPublic)
+	return args.Get(0).([]byte), args.Get(1).([]byte), args.Get(2).([]byte), args.Error(3)
 }
 
 // GetToken mocks base method

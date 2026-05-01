@@ -1,5 +1,5 @@
 /*
- *   Copyright (c) 2024 Intel Corporation
+ *   Copyright (c) 2024-2026 Intel Corporation
  *   All rights reserved.
  *   SPDX-License-Identifier: BSD-3-Clause
  */
@@ -14,21 +14,23 @@ import (
 type AttestationTokenClaim struct {
 	*SGXClaims
 	*TDXClaims
-	AttesterHeldData    string                      `json:"attester_held_data,omitempty"` // Is this finalized?
-	AttesterInittime    map[string]interface{}      `json:"attester_inittime_data,omitempty"`
-	AttesterRuntime     map[string]interface{}      `json:"attester_runtime_data,omitempty"`
-	VerifierNonce       *itaConnector.VerifierNonce `json:"verifier_nonce,omitempty"`
-	PolicyIdsMatched    []PolicyClaim               `json:"policy_ids_matched,omitempty"`
-	PolicyIdsUnmatched  []PolicyClaim               `json:"policy_ids_unmatched,omitempty"`
-	PolicyDefinedClaims *map[string]interface{}     `json:"policy_defined_claims,omitempty"`
-	AttesterTcbStatus   string                      `json:"attester_tcb_status"`
-	AttesterAdvisoryIds []string                    `json:"attester_advisory_ids,omitempty"`
-	AttesterType        AttesterType                `json:"attester_type"`
-	VerifierInstanceIds []uuid.UUID                 `json:"verifier_instance_ids"`
-	DbgStat             string                      `json:"dbgstat,omitempty"`     // EAT claims
-	EatProfile          string                      `json:"eat_profile,omitempty"` // EAT claims
-	IntUse              string                      `json:"intuse,omitempty"`      // EAT claims
-	Version             string                      `json:"ver"`
+	AttesterHeldData      string                      `json:"attester_held_data,omitempty"` // Is this finalized?
+	AttesterInittime      map[string]interface{}      `json:"attester_inittime_data,omitempty"`
+	AttesterRuntime       map[string]interface{}      `json:"attester_runtime_data,omitempty"`
+	VerifierNonce         *itaConnector.VerifierNonce `json:"verifier_nonce,omitempty"`
+	PolicyIdsMatched      []PolicyClaim               `json:"policy_ids_matched,omitempty"`
+	PolicyIdsUnmatched    []PolicyClaim               `json:"policy_ids_unmatched,omitempty"`
+	PolicyDefinedClaims   *map[string]interface{}     `json:"policy_defined_claims,omitempty"`
+	AttesterTcbStatus     string                      `json:"attester_tcb_status"`
+	AttesterAdvisoryIds   []string                    `json:"attester_advisory_ids,omitempty"`
+	AttesterType          AttesterType                `json:"attester_type"`
+	VerifierInstanceIds   []uuid.UUID                 `json:"verifier_instance_ids"`
+	DbgStat               string                      `json:"dbgstat,omitempty"`     // EAT claims
+	EatProfile            string                      `json:"eat_profile,omitempty"` // EAT claims
+	IntUse                string                      `json:"intuse,omitempty"`      // EAT claims
+	Version               string                      `json:"ver"`
+	NVGPUClaimDetails     map[string]NVGPUClaimDetail `json:"nvgpu_claim_details,omitempty"`
+	NVGPUOverallAttResult *bool                       `json:"x-nvidia-overall-att-result,omitempty"`
 }
 
 type SGXClaims struct {
@@ -71,6 +73,14 @@ type TDXClaims struct {
 type PolicyClaim struct {
 	Id      uuid.UUID `json:"id"`
 	Version string    `json:"version"`
+}
+
+// NVGPUClaimDetail holds per-GPU attestation details from an ITA v2 token.
+type NVGPUClaimDetail struct {
+	DbgStat string `json:"dbgstat,omitempty"`
+	HwModel string `json:"hwmodel,omitempty"`
+	SecBoot bool   `json:"secboot"`
+	MeasRes string `json:"measres,omitempty"`
 }
 
 type QuoteVerificationCollateral struct {

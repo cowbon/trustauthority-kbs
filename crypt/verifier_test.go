@@ -9,24 +9,24 @@ package crypt
 import (
 	"testing"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type TestClaims struct {
-	jwt.StandardClaims
+	jwt.RegisteredClaims
 	CustomField string `json:"custom_field"`
 }
 
 func TestGetTokenClaims(t *testing.T) {
 	// Success case
 	claims := TestClaims{
-		StandardClaims: jwt.StandardClaims{Subject: "test-subject"},
-		CustomField:    "test-value",
+		RegisteredClaims: jwt.RegisteredClaims{Subject: "test-subject"},
+		CustomField:      "test-value",
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, _ := token.SignedString([]byte("secret"))
 
-	parsedToken, _ := jwt.ParseWithClaims(tokenString, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
+	parsedToken, _ := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte("secret"), nil
 	})
 

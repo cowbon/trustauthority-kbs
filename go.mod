@@ -6,12 +6,12 @@ go 1.26.2
 require (
 	github.com/gemalto/kmip-go v0.0.6
 	github.com/go-kit/kit v0.13.0
-	github.com/golang-jwt/jwt/v4 v4.5.2
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/handlers v1.5.1
 	github.com/gorilla/mux v1.8.1
 	github.com/hashicorp/vault/api v1.23.0
-	github.com/intel/trustauthority-client v1.1.0
+	github.com/intel/trustauthority-client v1.11.0
 	github.com/onsi/gomega v1.27.10
 	github.com/pkg/errors v0.9.1
 	github.com/shaj13/go-guardian/v2 v2.11.6

@@ -1,5 +1,5 @@
 /*
- *   Copyright (c) 2024 Intel Corporation
+ *   Copyright (c) 2024-2026 Intel Corporation
  *   All rights reserved.
  *   SPDX-License-Identifier: BSD-3-Clause
  */
@@ -590,14 +590,155 @@ func TestValidateAttestationTokenClaims(t *testing.T) {
 	g.Expect(err).To(gomega.HaveOccurred())
 
 	// SGX attestation_type with no sgx object must return an explicit error, not panic.
-	transferPolicy = &model.KeyTransferPolicy{AttestationType: model.SGX}
+	transferPolicy = &model.KeyTransferPolicy{AttestationType: model.AttesterTypes{model.SGX}}
 	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
 	g.Expect(err).To(gomega.HaveOccurred())
 	g.Expect(err.Error()).To(gomega.ContainSubstring("sgx policy details missing"))
 
 	// TDX attestation_type with no tdx object must return an explicit error, not panic.
-	transferPolicy = &model.KeyTransferPolicy{AttestationType: model.TDX}
+	transferPolicy = &model.KeyTransferPolicy{AttestationType: model.AttesterTypes{model.TDX}}
 	err = validateAttestationTokenClaims(tokenClaims, transferPolicy)
 	g.Expect(err).To(gomega.HaveOccurred())
 	g.Expect(err.Error()).To(gomega.ContainSubstring("tdx policy details missing"))
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+// TestValidateNVGPUClaims covers the NVGPU-specific validation paths in
+// validateNVGPUClaims and validateAttestationTokenClaims (NVGPU branch).
+func TestValidateNVGPUClaims(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	trueVal := true
+	falseVal := false
+
+	// helper: a valid TDX+NVGPU composite policy
+	makeCompositePolicy := func(nvgpu *model.NvgpuPolicy) *model.KeyTransferPolicy {
+		return &model.KeyTransferPolicy{
+			AttestationType: model.AttesterTypes{model.TDX, model.NVGPU},
+			TDX:             &model.TdxPolicy{},
+			NVGPU:           nvgpu,
+		}
+	}
+
+	// helper: base token with TDX attester type and an NVGPU overall result
+	makeToken := func(overallResult *bool, details map[string]model.NVGPUClaimDetail) *model.AttestationTokenClaim {
+		return &model.AttestationTokenClaim{
+			AttesterType:          model.TDX,
+			TDXClaims:             &model.TDXClaims{},
+			NVGPUOverallAttResult: overallResult,
+			NVGPUClaimDetails:     details,
+		}
+	}
+
+	// Case 1: NVGPU policy present but token has no NVGPUOverallAttResult — must fail.
+	policy := makeCompositePolicy(&model.NvgpuPolicy{})
+	token := makeToken(nil, nil)
+	err := validateAttestationTokenClaims(token, policy)
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring("nvgpu overall attestation result is missing"))
+
+	// Case 2: Empty NVGPU policy, token has overall result — must succeed.
+	policy = makeCompositePolicy(&model.NvgpuPolicy{})
+	token = makeToken(&trueVal, nil)
+	err = validateAttestationTokenClaims(token, policy)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	// Case 3: EnforceOverallAttestationResult=true, token result is false — must fail.
+	policy = makeCompositePolicy(&model.NvgpuPolicy{
+		Attributes: &model.NvgpuAttributes{EnforceOverallAttestationResult: &trueVal},
+	})
+	token = makeToken(&falseVal, nil)
+	err = validateAttestationTokenClaims(token, policy)
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring("NVGPU overall attestation result is not true"))
+
+	// Case 4: EnforceOverallAttestationResult=true, token result is true — must succeed.
+	policy = makeCompositePolicy(&model.NvgpuPolicy{
+		Attributes: &model.NvgpuAttributes{EnforceOverallAttestationResult: &trueVal},
+	})
+	token = makeToken(&trueVal, nil)
+	err = validateAttestationTokenClaims(token, policy)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	// Case 5: RequireSecureBoot=true, token has no claim_details — must fail (fail-closed).
+	policy = makeCompositePolicy(&model.NvgpuPolicy{
+		Attributes: &model.NvgpuAttributes{RequireSecureBoot: &trueVal},
+	})
+	token = makeToken(&trueVal, nil)
+	err = validateAttestationTokenClaims(token, policy)
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring("nvgpu claim_details are missing"))
+
+	// Case 6: RequireSecureBoot=true, one GPU has secboot=false — must fail.
+	policy = makeCompositePolicy(&model.NvgpuPolicy{
+		Attributes: &model.NvgpuAttributes{RequireSecureBoot: &trueVal},
+	})
+	token = makeToken(&trueVal, map[string]model.NVGPUClaimDetail{
+		"GPU-0": {SecBoot: false, HwModel: "H100"},
+	})
+	err = validateAttestationTokenClaims(token, policy)
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring("does not have secure boot enabled"))
+
+	// Case 7: RequireSecureBoot=true, all GPUs have secboot=true — must succeed.
+	policy = makeCompositePolicy(&model.NvgpuPolicy{
+		Attributes: &model.NvgpuAttributes{RequireSecureBoot: &trueVal},
+	})
+	token = makeToken(&trueVal, map[string]model.NVGPUClaimDetail{
+		"GPU-0": {SecBoot: true, HwModel: "H100"},
+		"GPU-1": {SecBoot: true, HwModel: "H100"},
+	})
+	err = validateAttestationTokenClaims(token, policy)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	// Case 8: HwModel allowlist, GPU has model not in list — must fail.
+	policy = makeCompositePolicy(&model.NvgpuPolicy{
+		Attributes: &model.NvgpuAttributes{HwModel: []string{"H100"}},
+	})
+	token = makeToken(&trueVal, map[string]model.NVGPUClaimDetail{
+		"GPU-0": {SecBoot: true, HwModel: "A100"},
+	})
+	err = validateAttestationTokenClaims(token, policy)
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring("not in the allowlist"))
+
+	// Case 9: HwModel allowlist, all GPUs in list — must succeed.
+	policy = makeCompositePolicy(&model.NvgpuPolicy{
+		Attributes: &model.NvgpuAttributes{HwModel: []string{"H100", "H200"}},
+	})
+	token = makeToken(&trueVal, map[string]model.NVGPUClaimDetail{
+		"GPU-0": {SecBoot: true, HwModel: "H100"},
+		"GPU-1": {SecBoot: true, HwModel: "H200"},
+	})
+	err = validateAttestationTokenClaims(token, policy)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	// Case 10: Policy ID mismatch — must fail.
+	policy = makeCompositePolicy(&model.NvgpuPolicy{
+		PolicyIds: []uuid.UUID{uuid.MustParse("4517534b-a758-4447-7d2f-3e5606152ed6")},
+	})
+	token = makeToken(&trueVal, nil)
+	err = validateAttestationTokenClaims(token, policy)
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring("policy-id"))
+
+	// Case 11: Policy ID match — must succeed.
+	policy = makeCompositePolicy(&model.NvgpuPolicy{
+		PolicyIds: []uuid.UUID{uuid.MustParse("4517534b-a758-4447-7d2f-3e5606152ed6")},
+	})
+	token = makeToken(&trueVal, nil)
+	token.PolicyIdsMatched = []model.PolicyClaim{
+		{Id: uuid.MustParse("4517534b-a758-4447-7d2f-3e5606152ed6"), Version: "v2"},
+	}
+	err = validateAttestationTokenClaims(token, policy)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	// Case 12: Token attester_type mismatch (SGX token against TDX+NVGPU policy) — must fail.
+	policy = makeCompositePolicy(&model.NvgpuPolicy{})
+	token = makeToken(&trueVal, nil)
+	token.AttesterType = model.SGX
+	err = validateAttestationTokenClaims(token, policy)
+	g.Expect(err).To(gomega.HaveOccurred())
+	g.Expect(err.Error()).To(gomega.ContainSubstring("attester_type"))
 }

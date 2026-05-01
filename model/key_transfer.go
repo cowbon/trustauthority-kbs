@@ -1,5 +1,5 @@
 /*
- *   Copyright (c) 2024 Intel Corporation
+ *   Copyright (c) 2024-2026 Intel Corporation
  *   All rights reserved.
  *   SPDX-License-Identifier: BSD-3-Clause
  */
@@ -7,7 +7,11 @@
 package model
 
 import (
+	"bytes"
+	"encoding/json"
+
 	itaConnector "github.com/intel/trustauthority-client/go-connector"
+	"github.com/pkg/errors"
 )
 
 type KeyTransferRequest struct {
@@ -26,6 +30,83 @@ type KeyTransferRequest struct {
 	// Log of all events that get extended to RTMRs (runtime-extendable measurement registers) . RTMR event log is available through ACPI.
 	// example: [ { "rtmr": {  "index":1....
 	EventLog []byte `json:"event_log,omitempty"`
+	// Raw NVGPU SDK attestation evidence, forwarded verbatim to the ITA v2 attest endpoint.
+	// Only present in composite TDX+NVGPU background-mode requests.
+	NVGPU json.RawMessage `json:"nvgpu,omitempty"`
+	// V2SGX is true when the client sent a nested "sgx" object, indicating the
+	// ITA v2 attest endpoint should be called with an SGX sub-object.
+	V2SGX bool `json:"-"`
+}
+
+type keyTransferRequestTDX struct {
+	Quote         []byte                      `json:"quote,omitempty"`
+	VerifierNonce *itaConnector.VerifierNonce `json:"nonce,omitempty"`
+	RuntimeData   []byte                      `json:"runtime_data,omitempty"`
+	EventLog      []byte                      `json:"event_log,omitempty"`
+}
+
+// keyTransferRequestSGX is the nested "sgx" object in an ITA v2-style request.
+// SGX evidence has no event log (no RTMRs).
+type keyTransferRequestSGX struct {
+	Quote         []byte                      `json:"quote,omitempty"`
+	VerifierNonce *itaConnector.VerifierNonce `json:"nonce,omitempty"`
+	RuntimeData   []byte                      `json:"runtime_data,omitempty"`
+}
+
+type keyTransferRequestWire struct {
+	AttestationToken string                      `json:"attestation_token,omitempty"`
+	Quote            []byte                      `json:"quote,omitempty"`
+	VerifierNonce    *itaConnector.VerifierNonce `json:"nonce,omitempty"`
+	RuntimeData      []byte                      `json:"user_data,omitempty"`
+	EventLog         []byte                      `json:"event_log,omitempty"`
+	NVGPU            json.RawMessage             `json:"nvgpu,omitempty"`
+	SGX              *keyTransferRequestSGX      `json:"sgx,omitempty"`
+	TDX              *keyTransferRequestTDX      `json:"tdx,omitempty"`
+}
+
+// UnmarshalJSON accepts both the legacy flat KBS request shape and the
+// ITA-style composite request shape with nested "tdx" or "sgx" objects.
+// Unknown JSON fields are rejected to preserve the same strict-decode
+// behaviour as the outer json.Decoder in the HTTP handler.
+func (r *KeyTransferRequest) UnmarshalJSON(data []byte) error {
+	var wire keyTransferRequestWire
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&wire); err != nil {
+		return err
+	}
+
+	r.AttestationToken = wire.AttestationToken
+	r.NVGPU = wire.NVGPU
+
+	if wire.SGX != nil {
+		if wire.TDX != nil {
+			return errors.New("request cannot include both sgx and tdx evidence objects")
+		}
+		if len(wire.NVGPU) > 0 {
+			return errors.New("nvgpu evidence is not valid with sgx evidence")
+		}
+		r.NVGPU = nil
+		r.Quote = wire.SGX.Quote
+		r.VerifierNonce = wire.SGX.VerifierNonce
+		r.RuntimeData = wire.SGX.RuntimeData
+		r.V2SGX = true
+		return nil
+	}
+
+	if wire.TDX != nil {
+		r.Quote = wire.TDX.Quote
+		r.VerifierNonce = wire.TDX.VerifierNonce
+		r.RuntimeData = wire.TDX.RuntimeData
+		r.EventLog = wire.TDX.EventLog
+		return nil
+	}
+
+	r.Quote = wire.Quote
+	r.VerifierNonce = wire.VerifierNonce
+	r.RuntimeData = wire.RuntimeData
+	r.EventLog = wire.EventLog
+	return nil
 }
 
 type KeyTransferResponse struct {

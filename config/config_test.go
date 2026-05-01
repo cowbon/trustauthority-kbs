@@ -256,3 +256,9 @@ func TestInvalidAuthenticationDefendLockoutMinutesConfig(t *testing.T) {
 	err = cfg.Validate()
 	g.Expect(err).To(gomega.HaveOccurred())
 }
+func TestDefaultConfig(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	cfg := DefaultConfig()
+	g.Expect(cfg).NotTo(gomega.BeNil())
+	g.Expect(cfg.ServicePort).NotTo(gomega.BeNil())
+}

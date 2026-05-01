@@ -1,5 +1,5 @@
 /*
- *   Copyright (c) 2024 Intel Corporation
+ *   Copyright (c) 2024-2026 Intel Corporation
  *   All rights reserved.
  *   SPDX-License-Identifier: BSD-3-Clause
  */
@@ -20,14 +20,18 @@ type KeyTransferPolicy struct {
 	// Asset creation time
 	// example: 0001-01-01T00:00:00Z
 	CreatedAt time.Time `json:"created_at,omitempty"`
-	// Defines if SGX\TDX Attributes need to be part of key Transfer Policy
+	// Defines which attester types must be satisfied. Accepts a plain string
+	// ("TDX") for backward compatibility or an array (["TDX","NVGPU"]) for
+	// composite policies.
 	// required: true
-	// example: "SGX"
-	AttestationType AttesterType `json:"attestation_type"`
+	// example: ["TDX","NVGPU"]
+	AttestationType AttesterTypes `json:"attestation_type"`
 	// List of SGX Enclave Attributes that are part of Enclave
 	SGX *SgxPolicy `json:"sgx,omitempty"`
 	// List of TDX TD Attributes that are part of TDX Policy
 	TDX *TdxPolicy `json:"tdx,omitempty"`
+	// NVGPU attestation policy (required when attestation_type contains "NVGPU")
+	NVGPU *NvgpuPolicy `json:"nvgpu,omitempty"`
 }
 
 type SgxPolicy struct {
@@ -95,4 +99,23 @@ type TdxAttributes struct {
 }
 
 type KeyTransferPolicyFilterCriteria struct {
+}
+
+// NvgpuPolicy holds the ITA policy IDs and per-GPU validation attributes
+// that KBS enforces when "NVGPU" is included in attestation_type.
+type NvgpuPolicy struct {
+	// List of ITA Policy IDs that must be matched in the attestation token
+	PolicyIds []uuid.UUID `json:"policy_ids,omitempty"`
+	// Per-GPU validation attributes
+	Attributes *NvgpuAttributes `json:"attributes,omitempty"`
+}
+
+// NvgpuAttributes defines the KBS-enforced NVGPU attestation requirements.
+type NvgpuAttributes struct {
+	// If true, the x-nvidia-overall-att-result claim in the token must be true.
+	EnforceOverallAttestationResult *bool `json:"enforce_overall_attestation_result,omitempty"`
+	// If true, every GPU's secboot claim must be true.
+	RequireSecureBoot *bool `json:"require_secure_boot,omitempty"`
+	// If set, every GPU's hwmodel claim must appear in this allowlist.
+	HwModel []string `json:"hwmodel,omitempty"`
 }

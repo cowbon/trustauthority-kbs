@@ -30,8 +30,7 @@ var kmipClient mocks.MockKmipClient = mocks.MockKmipClient{}
 var kmipKeyManager *mocks.MockKmipManager = mocks.NewMockKmipManager(kmipClient)
 var kRemoteManager *keymanager.RemoteManager = keymanager.NewRemoteManager(keyStore, kmipKeyManager)
 var svcInstance Service = service{
-	itaApiClient:           itaClientConnector,
-	itaTokenVerifierClient: itaClientConnector,
+	itaClient: itaClientConnector,
 	repository: &repository.Repository{
 		KeyStore:               keyStore,
 		KeyTransferPolicyStore: keyTransPolicyStore,

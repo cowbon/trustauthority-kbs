@@ -21,7 +21,7 @@ func TestNewValidService(t *testing.T) {
 	conf := config.Configuration{}
 	itaClient := mocks.NewMockClient()
 	conf = config.Configuration{BearerTokenValidityInMinutes: 5}
-	_, err := NewService(itaClient, itaClient,
+	_, err := NewService(itaClient,
 		&repository.Repository{},
 		&keymanager.RemoteManager{},
 		&conf)
@@ -34,6 +34,6 @@ func TestStatusCode(t *testing.T) {
 		Code:    400,
 		Message: "Bad Request",
 	}
-	err := he.Error()
-	g.Expect(err).NotTo(gomega.BeNil())
+	g.Expect(he.StatusCode()).To(gomega.Equal(400))
+	g.Expect(he.Error()).NotTo(gomega.BeNil())
 }

@@ -22,8 +22,7 @@ import (
 
 var mockUserStore *mocks.MockUserStore = mocks.NewFakeUserStore()
 var svcJWTTestInstance Service = service{
-	itaApiClient:           itaClientConnector,
-	itaTokenVerifierClient: itaClientConnector,
+	itaClient: itaClientConnector,
 	repository: &repository.Repository{
 		UserStore:              mockUserStore,
 		KeyStore:               keyStore,

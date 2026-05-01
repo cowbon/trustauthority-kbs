@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -42,7 +43,7 @@ func TestKeyTransferPolicyStore_Create_Success(t *testing.T) {
 
 	// Create a test policy
 	policy := &model.KeyTransferPolicy{
-		AttestationType: model.SGX,
+		AttestationType: model.AttesterTypes{model.SGX},
 		SGX: &model.SgxPolicy{
 			Attributes: &model.SgxAttributes{
 				MrSigner:     []string{"test-mrsigner"},
@@ -81,7 +82,7 @@ func TestKeyTransferPolicyStore_Create_TDXPolicy(t *testing.T) {
 	enforceTcb := true
 	seamSvn := uint16(258)
 	policy := &model.KeyTransferPolicy{
-		AttestationType: model.TDX,
+		AttestationType: model.AttesterTypes{model.TDX},
 		TDX: &model.TdxPolicy{
 			Attributes: &model.TdxAttributes{
 				MrSignerSeam:       []string{"test-mrsigner-seam"},
@@ -102,7 +103,7 @@ func TestKeyTransferPolicyStore_Create_TDXPolicy(t *testing.T) {
 	}
 
 	// Verify policy was created with TDX attributes
-	if createdPolicy.AttestationType != model.TDX {
+	if !createdPolicy.AttestationType.Contains(model.TDX) {
 		t.Error("Policy should have TDX attestation type")
 	}
 	if createdPolicy.TDX == nil {
@@ -115,7 +116,7 @@ func TestKeyTransferPolicyStore_Create_InvalidDirectory(t *testing.T) {
 	store := NewKeyTransferPolicyStore("/invalid/non-existent/path")
 
 	policy := &model.KeyTransferPolicy{
-		AttestationType: model.SGX,
+		AttestationType: model.AttesterTypes{model.SGX},
 	}
 
 	_, err := store.Create(policy)
@@ -132,7 +133,7 @@ func TestKeyTransferPolicyStore_Retrieve_Success(t *testing.T) {
 
 	// Create a policy first
 	originalPolicy := &model.KeyTransferPolicy{
-		AttestationType: model.SGX,
+		AttestationType: model.AttesterTypes{model.SGX},
 		SGX: &model.SgxPolicy{
 			Attributes: &model.SgxAttributes{
 				MrSigner:     []string{"test-mrsigner"},
@@ -156,7 +157,7 @@ func TestKeyTransferPolicyStore_Retrieve_Success(t *testing.T) {
 	if retrieved.ID != created.ID {
 		t.Errorf("Retrieved ID = %v, want %v", retrieved.ID, created.ID)
 	}
-	if retrieved.AttestationType != created.AttestationType {
+	if !reflect.DeepEqual(retrieved.AttestationType, created.AttestationType) {
 		t.Errorf("AttestationType = %v, want %v", retrieved.AttestationType, created.AttestationType)
 	}
 }
@@ -207,7 +208,7 @@ func TestKeyTransferPolicyStore_Delete_Success(t *testing.T) {
 
 	// Create a policy first
 	policy := &model.KeyTransferPolicy{
-		AttestationType: model.SGX,
+		AttestationType: model.AttesterTypes{model.SGX},
 	}
 	created, err := store.Create(policy)
 	if err != nil {
@@ -269,7 +270,7 @@ func TestKeyTransferPolicyStore_Search_MultiplePolices(t *testing.T) {
 
 	// Create multiple policies
 	policy1 := &model.KeyTransferPolicy{
-		AttestationType: model.SGX,
+		AttestationType: model.AttesterTypes{model.SGX},
 		SGX: &model.SgxPolicy{
 			Attributes: &model.SgxAttributes{
 				MrSigner: []string{"signer1"},
@@ -277,7 +278,7 @@ func TestKeyTransferPolicyStore_Search_MultiplePolices(t *testing.T) {
 		},
 	}
 	policy2 := &model.KeyTransferPolicy{
-		AttestationType: model.TDX,
+		AttestationType: model.AttesterTypes{model.TDX},
 		TDX: &model.TdxPolicy{
 			Attributes: &model.TdxAttributes{
 				MrSignerSeam: []string{"signer2"},
@@ -285,7 +286,7 @@ func TestKeyTransferPolicyStore_Search_MultiplePolices(t *testing.T) {
 		},
 	}
 	policy3 := &model.KeyTransferPolicy{
-		AttestationType: model.SGX,
+		AttestationType: model.AttesterTypes{model.SGX},
 		SGX: &model.SgxPolicy{
 			Attributes: &model.SgxAttributes{
 				MrSigner: []string{"signer3"},
@@ -325,7 +326,7 @@ func TestKeyTransferPolicyStore_Search_WithNilCriteria(t *testing.T) {
 
 	// Create a policy
 	policy := &model.KeyTransferPolicy{
-		AttestationType: model.SGX,
+		AttestationType: model.AttesterTypes{model.SGX},
 	}
 	_, err := store.Create(policy)
 	if err != nil {
@@ -371,7 +372,7 @@ func TestKeyTransferPolicyStore_Search_CorruptedFile(t *testing.T) {
 
 	// Create a valid policy first
 	policy := &model.KeyTransferPolicy{
-		AttestationType: model.SGX,
+		AttestationType: model.AttesterTypes{model.SGX},
 	}
 	created, err := store.Create(policy)
 	if err != nil {
@@ -402,7 +403,7 @@ func TestKeyTransferPolicyStore_ComplexSGXPolicy(t *testing.T) {
 	enforceTcb := true
 	isvSvn := uint16(5)
 	policy := &model.KeyTransferPolicy{
-		AttestationType: model.SGX,
+		AttestationType: model.AttesterTypes{model.SGX},
 		SGX: &model.SgxPolicy{
 			Attributes: &model.SgxAttributes{
 				MrSigner:           []string{"signer1", "signer2", "signer3"},
@@ -453,7 +454,7 @@ func TestKeyTransferPolicyStore_ComplexTDXPolicy(t *testing.T) {
 	enforceTcb := false
 	seamSvn := uint16(300)
 	policy := &model.KeyTransferPolicy{
-		AttestationType: model.TDX,
+		AttestationType: model.AttesterTypes{model.TDX},
 		TDX: &model.TdxPolicy{
 			Attributes: &model.TdxAttributes{
 				MrSignerSeam:       []string{"seam-signer-1", "seam-signer-2"},
@@ -511,7 +512,7 @@ func TestKeyTransferPolicyStore_MultipleOperations(t *testing.T) {
 	var createdIDs []uuid.UUID
 	for i := 0; i < 5; i++ {
 		policy := &model.KeyTransferPolicy{
-			AttestationType: model.SGX,
+			AttestationType: model.AttesterTypes{model.SGX},
 		}
 		created, err := store.Create(policy)
 		if err != nil {
@@ -558,7 +559,7 @@ func TestKeyTransferPolicyStore_TimestampPersistence(t *testing.T) {
 	// Create a policy
 	before := time.Now().UTC().Add(-time.Second)
 	policy := &model.KeyTransferPolicy{
-		AttestationType: model.SGX,
+		AttestationType: model.AttesterTypes{model.SGX},
 	}
 	created, err := store.Create(policy)
 	if err != nil {
@@ -591,7 +592,7 @@ func TestKeyTransferPolicyStore_FilePermissions(t *testing.T) {
 
 	// Create a policy
 	policy := &model.KeyTransferPolicy{
-		AttestationType: model.SGX,
+		AttestationType: model.AttesterTypes{model.SGX},
 	}
 	created, err := store.Create(policy)
 	if err != nil {
@@ -619,7 +620,7 @@ func TestKeyTransferPolicyStore_JSONMarshaling(t *testing.T) {
 
 	// Create a policy with specific values
 	policy := &model.KeyTransferPolicy{
-		AttestationType: model.SGX,
+		AttestationType: model.AttesterTypes{model.SGX},
 		SGX: &model.SgxPolicy{
 			Attributes: &model.SgxAttributes{
 				MrSigner:     []string{"test-signer"},
@@ -647,7 +648,7 @@ func TestKeyTransferPolicyStore_JSONMarshaling(t *testing.T) {
 	}
 
 	// Verify specific values
-	if unmarshaled.AttestationType != model.SGX {
+	if !unmarshaled.AttestationType.Contains(model.SGX) {
 		t.Errorf("Unmarshaled AttestationType = %v, want %v", unmarshaled.AttestationType, model.SGX)
 	}
 	if len(unmarshaled.SGX.Attributes.MrSigner) != 1 {

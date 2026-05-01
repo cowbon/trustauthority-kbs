@@ -21,8 +21,7 @@ import (
 var userID uuid.UUID
 var userStore *mocks.MockUserStore = mocks.NewFakeUserStore()
 var svcUserTestInstance Service = service{
-	itaApiClient:           itaClientConnector,
-	itaTokenVerifierClient: itaClientConnector,
+	itaClient: itaClientConnector,
 	repository: &repository.Repository{
 		UserStore:              userStore,
 		KeyStore:               keyStore,

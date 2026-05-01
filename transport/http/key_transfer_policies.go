@@ -1,5 +1,5 @@
 /*
- *   Copyright (c) 2024 Intel Corporation
+ *   Copyright (c) 2024-2026 Intel Corporation
  *   All rights reserved.
  *   SPDX-License-Identifier: BSD-3-Clause
  */
@@ -163,25 +163,56 @@ func encodeSearchKeyTransferPoliciesHTTPResponse(ctx context.Context, w http.Res
 
 func validateKeyTransferPolicy(policyCreateReq model.KeyTransferPolicy) error {
 
-	if policyCreateReq.AttestationType == "" {
-		return errors.New("Attestation_type must be specified")
+	if len(policyCreateReq.AttestationType) == 0 {
+		return errors.New("attestation_type must be specified")
 	}
 
-	if !policyCreateReq.AttestationType.Valid() {
-		return errors.New("Invalid attestation type")
+	for _, attType := range policyCreateReq.AttestationType {
+		if !attType.Valid() {
+			return errors.New("Invalid attestation type")
+		}
 	}
 
-	if policyCreateReq.AttestationType == model.SGX && policyCreateReq.SGX.Attributes != nil {
+	// SGX and TDX are mutually exclusive key-wrapping attester types.
+	if policyCreateReq.AttestationType.Contains(model.SGX) && policyCreateReq.AttestationType.Contains(model.TDX) {
+		return errors.New("attestation_type cannot include both SGX and TDX")
+	}
+	// NVGPU can only accompany TDX, not SGX.
+	if policyCreateReq.AttestationType.Contains(model.NVGPU) && !policyCreateReq.AttestationType.Contains(model.TDX) {
+		return errors.New("attestation_type includes NVGPU but does not include required TDX")
+	}
+
+	// NVGPU-only policy is not allowed (no key-wrapping attester present).
+	if _, err := policyCreateReq.AttestationType.KeyWrappingAttesterType(); err != nil {
+		return errors.New("Policy must contain at least one key-wrapping attester type (TDX or SGX)")
+	}
+
+	// Require sub-policy objects to be present whenever their type is declared.
+	if policyCreateReq.AttestationType.Contains(model.SGX) && policyCreateReq.SGX == nil {
+		return errors.New("sgx policy details are required when attestation_type includes SGX")
+	}
+	if policyCreateReq.AttestationType.Contains(model.TDX) && policyCreateReq.TDX == nil {
+		return errors.New("tdx policy details are required when attestation_type includes TDX")
+	}
+
+	if policyCreateReq.AttestationType.Contains(model.SGX) && policyCreateReq.SGX != nil && policyCreateReq.SGX.Attributes != nil {
 		if err := validateSGXAttributes(policyCreateReq.SGX.Attributes); err != nil {
 			return errors.Wrap(err, "Input validation failed for SGX Attributes")
 		}
 	}
 
-	if policyCreateReq.AttestationType == model.TDX && policyCreateReq.TDX.Attributes != nil {
+	if policyCreateReq.AttestationType.Contains(model.TDX) && policyCreateReq.TDX != nil && policyCreateReq.TDX.Attributes != nil {
 		if err := validateTDXAttributes(policyCreateReq.TDX.Attributes); err != nil {
 			return errors.Wrap(err, "Input validation failed for TDX Attributes")
 		}
 	}
+
+	// When NVGPU is part of the policy the nvgpu sub-policy must be present;
+	// otherwise the policy will always fail at key-transfer time.
+	if policyCreateReq.AttestationType.Contains(model.NVGPU) && policyCreateReq.NVGPU == nil {
+		return errors.New("nvgpu policy details are required when attestation_type includes NVGPU")
+	}
+
 	return nil
 }
 

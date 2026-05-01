@@ -9,17 +9,19 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/intel/trustauthority-client/go-connector"
-	jwtStrategy "github.com/shaj13/go-guardian/v2/auth/strategies/jwt"
-	"github.com/shaj13/go-guardian/v2/auth/strategies/token"
-	"github.com/shaj13/libcache"
+	"time"
+
 	"intel/kbs/v1/config"
 	"intel/kbs/v1/constant"
 	"intel/kbs/v1/keymanager"
 	"intel/kbs/v1/model"
 	"intel/kbs/v1/repository"
 	"intel/kbs/v1/version"
-	"time"
+
+	"github.com/intel/trustauthority-client/go-connector"
+	jwtStrategy "github.com/shaj13/go-guardian/v2/auth/strategies/jwt"
+	"github.com/shaj13/go-guardian/v2/auth/strategies/token"
+	"github.com/shaj13/libcache"
 
 	"github.com/google/uuid"
 )
@@ -46,23 +48,21 @@ type Service interface {
 }
 
 type service struct {
-	itaApiClient           connector.Connector
-	itaTokenVerifierClient connector.Connector
-	repository             *repository.Repository
-	remoteManager          *keymanager.RemoteManager
-	config                 *config.Configuration
+	itaClient     connector.Connector
+	repository    *repository.Repository
+	remoteManager *keymanager.RemoteManager
+	config        *config.Configuration
 }
 
-func NewService(itaApiClient connector.Connector, itaTokenVerifierClient connector.Connector, repo *repository.Repository, remoteManager *keymanager.RemoteManager, configuration *config.Configuration) (Service, error) {
+func NewService(itaClient connector.Connector, repo *repository.Repository, remoteManager *keymanager.RemoteManager, configuration *config.Configuration) (Service, error) {
 
 	var svc Service
 	{
 		svc = service{
-			itaApiClient:           itaApiClient,
-			itaTokenVerifierClient: itaTokenVerifierClient,
-			repository:             repo,
-			remoteManager:          remoteManager,
-			config:                 configuration,
+			itaClient:     itaClient,
+			repository:    repo,
+			remoteManager: remoteManager,
+			config:        configuration,
 		}
 	}
 

@@ -19,9 +19,7 @@ func TestNewITAClient_Success(t *testing.T) {
 		TrustAuthorityApiKey:  "test-api-key-12345",
 	}
 
-	serverName := "api.trustauthority.intel.com"
-
-	connector, err := NewITAClient(cfg, serverName)
+	connector, err := NewITAClient(cfg)
 	if err != nil {
 		t.Errorf("NewITAClient() error = %v, want nil", err)
 	}
@@ -49,8 +47,6 @@ func TestNewITAClient_InvalidURLs(t *testing.T) {
 		},
 	}
 
-	serverName := "api.example.com"
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &config.Configuration{
@@ -59,7 +55,7 @@ func TestNewITAClient_InvalidURLs(t *testing.T) {
 				TrustAuthorityApiKey:  "test-key",
 			}
 
-			_, err := NewITAClient(cfg, serverName)
+			_, err := NewITAClient(cfg)
 			// Invalid URLs should cause errors
 			if err == nil {
 				t.Errorf("NewITAClient() with invalid URL %s should return error", tt.baseUrl)

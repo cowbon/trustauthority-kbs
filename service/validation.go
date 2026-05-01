@@ -1,5 +1,5 @@
 /*
- *   Copyright (c) 2024 Intel Corporation
+ *   Copyright (c) 2024-2026 Intel Corporation
  *   All rights reserved.
  *   SPDX-License-Identifier: BSD-3-Clause
  */
@@ -7,11 +7,12 @@
 package service
 
 import (
-	_ "github.com/shaj13/libcache/fifo"
-	"github.com/sirupsen/logrus"
 	"intel/kbs/v1/constant"
 	"intel/kbs/v1/model"
 	"reflect"
+
+	_ "github.com/shaj13/libcache/fifo"
+	"github.com/sirupsen/logrus"
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -19,44 +20,138 @@ import (
 
 func validateAttestationTokenClaims(tokenClaims *model.AttestationTokenClaim, transferPolicy *model.KeyTransferPolicy) error {
 
-	switch transferPolicy.AttestationType {
-	case model.SGX:
-		if transferPolicy.SGX == nil {
-			return errors.New("sgx policy details missing from key-transfer policy")
-		}
-		if transferPolicy.SGX.PolicyIds != nil {
-			if !isPolicyIdMatched(tokenClaims.PolicyIdsMatched, transferPolicy.SGX.PolicyIds) {
-				return errors.New("None of the policy-id in token claim policy_ids_matched matched with policy_ids attribute in key-transfer policy")
-			}
-		}
-		if transferPolicy.SGX.Attributes != nil {
-			if tokenClaims.SGXClaims == nil {
-				return errors.New("sgx attributes missing from attestation token")
-			}
-			return validateSGXTokenClaims(tokenClaims, transferPolicy.SGX.Attributes)
-		}
-		return nil
-
-	case model.TDX:
-		if transferPolicy.TDX == nil {
-			return errors.New("tdx policy details missing from key-transfer policy")
-		}
-		if transferPolicy.TDX.PolicyIds != nil {
-			if !isPolicyIdMatched(tokenClaims.PolicyIdsMatched, transferPolicy.TDX.PolicyIds) {
-				return errors.New("None of the policy-id in token claim policy_ids_matched matched with policy_ids attribute in key-transfer policy")
-			}
-		}
-		if transferPolicy.TDX.Attributes != nil {
-			if tokenClaims.TDXClaims == nil {
-				return errors.New("tdx attributes missing from attestation token")
-			}
-			return validateTDXTokenClaims(tokenClaims, transferPolicy.TDX.Attributes)
-		}
-		return nil
-
-	default:
-		return errors.New("Unsupported attestation-type")
+	if len(transferPolicy.AttestationType) == 0 {
+		return errors.New("attestation_type is empty in key-transfer policy")
 	}
+
+	for _, attType := range transferPolicy.AttestationType {
+		switch attType {
+		case model.SGX:
+			if transferPolicy.SGX == nil {
+				return errors.New("sgx policy details missing from key-transfer policy")
+			}
+			if tokenClaims.SGXClaims == nil {
+				return errors.New("sgx claims missing from attestation token")
+			}
+			if transferPolicy.SGX.PolicyIds != nil {
+				if !isPolicyIdMatched(tokenClaims.PolicyIdsMatched, transferPolicy.SGX.PolicyIds) {
+					return errors.New("None of the policy-id in token claim policy_ids_matched matched with policy_ids attribute in key-transfer policy")
+				}
+			}
+			if transferPolicy.SGX.Attributes != nil {
+				if tokenClaims.SGXClaims == nil {
+					return errors.New("sgx attributes missing from attestation token")
+				}
+				if err := validateSGXTokenClaims(tokenClaims, transferPolicy.SGX.Attributes); err != nil {
+					return err
+				}
+			}
+
+		case model.TDX:
+			if transferPolicy.TDX == nil {
+				return errors.New("tdx policy details missing from key-transfer policy")
+			}
+			if tokenClaims.TDXClaims == nil {
+				return errors.New("tdx claims missing from attestation token")
+			}
+			if transferPolicy.TDX.PolicyIds != nil {
+				if !isPolicyIdMatched(tokenClaims.PolicyIdsMatched, transferPolicy.TDX.PolicyIds) {
+					return errors.New("None of the policy-id in token claim policy_ids_matched matched with policy_ids attribute in key-transfer policy")
+				}
+			}
+			if transferPolicy.TDX.Attributes != nil {
+				if tokenClaims.TDXClaims == nil {
+					return errors.New("tdx attributes missing from attestation token")
+				}
+				if err := validateTDXTokenClaims(tokenClaims, transferPolicy.TDX.Attributes); err != nil {
+					return err
+				}
+			}
+
+		case model.NVGPU:
+			if transferPolicy.NVGPU == nil {
+				return errors.New("nvgpu policy details missing from key-transfer policy")
+			}
+			if err := validateNVGPUClaims(tokenClaims, transferPolicy.NVGPU); err != nil {
+				return err
+			}
+
+		default:
+			return errors.Errorf("unsupported attestation-type: %s", attType)
+		}
+	}
+
+	// Require that the token's attester_type matches the key-wrapping TEE declared
+	// in the policy (TDX or SGX).  Without this check, a policy with no
+	// attributes/policy_ids could be satisfied by a token for the wrong TEE.
+	kwAt, err := transferPolicy.AttestationType.KeyWrappingAttesterType()
+	if err != nil {
+		return errors.New("policy has no key-wrapping attester type (TDX/SGX)")
+	}
+	if tokenClaims.AttesterType != kwAt {
+		return errors.Errorf("token attester_type %q does not match policy key-wrapping attester type %q",
+			tokenClaims.AttesterType, kwAt)
+	}
+
+	return nil
+}
+
+func validateNVGPUClaims(tokenClaims *model.AttestationTokenClaim, nvgpuPolicy *model.NvgpuPolicy) error {
+	// Mandatory baseline: any NVGPU policy requires the token to carry the
+	// overall attestation result claim.  This prevents an empty policy
+	// (no policy_ids, no attributes) from being satisfied by a token that
+	// has no NVGPU claims at all.
+	if tokenClaims.NVGPUOverallAttResult == nil {
+		return errors.New("nvgpu overall attestation result is missing from attestation token")
+	}
+
+	// 1. Policy ID match (OR semantics)
+	if len(nvgpuPolicy.PolicyIds) > 0 {
+		if !isPolicyIdMatched(tokenClaims.PolicyIdsMatched, nvgpuPolicy.PolicyIds) {
+			return errors.New("None of the policy-id in token claim policy_ids_matched matched with nvgpu policy_ids in key-transfer policy")
+		}
+	}
+
+	if nvgpuPolicy.Attributes != nil {
+		attrs := nvgpuPolicy.Attributes
+
+		// 2. Overall attestation result
+		if attrs.EnforceOverallAttestationResult != nil && *attrs.EnforceOverallAttestationResult {
+			if tokenClaims.NVGPUOverallAttResult == nil || !*tokenClaims.NVGPUOverallAttResult {
+				return errors.New("NVGPU overall attestation result is not true")
+			}
+		}
+
+		// 3. Fail closed: per-GPU checks require non-empty claim_details
+		perGPUChecksRequired := (attrs.RequireSecureBoot != nil && *attrs.RequireSecureBoot) ||
+			len(attrs.HwModel) > 0
+		if perGPUChecksRequired && len(tokenClaims.NVGPUClaimDetails) == 0 {
+			return errors.New("nvgpu claim_details are missing from attestation token")
+		}
+
+		// 4. Per-GPU secure boot check
+		if attrs.RequireSecureBoot != nil && *attrs.RequireSecureBoot {
+			for gpuID, detail := range tokenClaims.NVGPUClaimDetails {
+				if !detail.SecBoot {
+					return errors.Errorf("GPU %s does not have secure boot enabled", gpuID)
+				}
+			}
+		}
+
+		// 5. HW model allowlist
+		if len(attrs.HwModel) > 0 {
+			allowed := make(map[string]bool, len(attrs.HwModel))
+			for _, m := range attrs.HwModel {
+				allowed[m] = true
+			}
+			for gpuID, detail := range tokenClaims.NVGPUClaimDetails {
+				if !allowed[detail.HwModel] {
+					return errors.Errorf("GPU %s hwmodel %q is not in the allowlist", gpuID, detail.HwModel)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func isPolicyIdMatched(tokenPolicyIds []model.PolicyClaim, keyPolicyIds []uuid.UUID) bool {

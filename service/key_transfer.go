@@ -1,5 +1,5 @@
 /*
- *   Copyright (c) 2024 Intel Corporation
+ *   Copyright (c) 2024-2026 Intel Corporation
  *   All rights reserved.
  *   SPDX-License-Identifier: BSD-3-Clause
  */
@@ -15,11 +15,14 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"encoding/pem"
 	"hash"
 	"io"
 	"math/big"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"intel/kbs/v1/constant"
@@ -52,6 +55,29 @@ type TransferKeyResponse struct {
 	KeyTransferResponse *model.KeyTransferResponse
 }
 
+// itaV2EvidenceTDX is the TDX sub-object sent to ITA /appraisal/v2/attest.
+type itaV2EvidenceTDX struct {
+	Quote       []byte `json:"quote,omitempty"`
+	RuntimeData []byte `json:"runtime_data,omitempty"`
+	EventLog    []byte `json:"event_log,omitempty"`
+}
+
+// itaV2EvidenceSGX is the SGX sub-object sent to ITA /appraisal/v2/attest.
+// SGX evidence has no event log (no RTMRs).
+type itaV2EvidenceSGX struct {
+	Quote       []byte `json:"quote,omitempty"`
+	RuntimeData []byte `json:"runtime_data,omitempty"`
+}
+
+// itaV2AttestRequest is the full body sent to ITA /appraisal/v2/attest.
+// SGX and TDX are mutually exclusive; NVGPU can only accompany TDX.
+type itaV2AttestRequest struct {
+	PolicyIds []uuid.UUID       `json:"policy_ids,omitempty"`
+	SGX       *itaV2EvidenceSGX `json:"sgx,omitempty"`
+	TDX       *itaV2EvidenceTDX `json:"tdx,omitempty"`
+	NVGPU     json.RawMessage   `json:"nvgpu,omitempty"`
+}
+
 func (mw loggingMiddleware) TransferKeyWithEvidence(ctx context.Context, req TransferKeyRequest) (*TransferKeyResponse, error) {
 	var err error
 	defer func(begin time.Time) {
@@ -64,7 +90,7 @@ func (mw loggingMiddleware) TransferKeyWithEvidence(ctx context.Context, req Tra
 	return resp, err
 }
 
-func (svc service) TransferKeyWithEvidence(_ context.Context, req TransferKeyRequest) (*TransferKeyResponse, error) {
+func (svc service) TransferKeyWithEvidence(ctx context.Context, req TransferKeyRequest) (*TransferKeyResponse, error) {
 	key, err := svc.remoteManager.RetrieveKey(req.KeyId)
 	if err != nil {
 		if err.Error() == RecordNotFound {
@@ -84,57 +110,74 @@ func (svc service) TransferKeyWithEvidence(_ context.Context, req TransferKeyReq
 
 	var token string
 	itaRequestID := req.KeyId.String()
-	if req.AttestationType == "" {
-		if req.KeyTransferRequest.AttestationToken == "" {
-			nonceArgs := itaConnector.GetNonceArgs{RequestId: itaRequestID}
-			nonceResp, err := svc.itaApiClient.GetNonce(nonceArgs)
-			if err != nil {
-				logrus.WithError(err).Error("Error retrieving nonce from Trust Authority service")
-				return nil, &HandledError{Code: http.StatusBadGateway, Message: "Error retrieving nonce from Trust Authority service"}
-			}
 
-			resp := &TransferKeyResponse{
-				Nonce:               nonceResp.Nonce,
-				AttestationType:     transferPolicy.AttestationType.String(),
-				KeyTransferResponse: nil,
-			}
-			return resp, nil
-		} else {
-			token = req.KeyTransferRequest.AttestationToken
+	if req.AttestationType == "" {
+		// Passport mode: client provides a pre-obtained attestation token.
+		// Nonce issuance is disabled in this phase — no GetNonce() call.
+		if req.KeyTransferRequest.AttestationToken == "" {
+			logrus.Error("Request has no attestation_token and no Attestation-Type header")
+			return nil, &HandledError{Code: http.StatusBadRequest, Message: "attestation_token or Attestation-Type header is required"}
 		}
+		token = req.KeyTransferRequest.AttestationToken
 	} else {
-		if req.AttestationType != transferPolicy.AttestationType.String() {
-			logrus.Error("attestation-type in request header does not match with attestation-type in key-transfer policy")
+		// Background mode: client provides raw evidence; KBS obtains the token.
+		if !transferPolicy.AttestationType.Contains(model.AttesterType(req.AttestationType)) {
+			logrus.Error("attestation-type in request header is not in key-transfer policy")
 			return nil, &HandledError{Code: http.StatusUnauthorized, Message: "attestation-type in request header does not match with attestation-type in key-transfer policy"}
 		}
 
-		var policyIds []uuid.UUID
-		switch transferPolicy.AttestationType {
-		case model.SGX:
-			policyIds = transferPolicy.SGX.PolicyIds
+		policyIds := getPolicyIDsForAttestationTypes(transferPolicy)
 
-		case model.TDX:
-			policyIds = transferPolicy.TDX.PolicyIds
+		if len(req.KeyTransferRequest.NVGPU) > 0 && req.KeyTransferRequest.V2SGX {
+			// Defense-in-depth: SGX+NVGPU should have been rejected by UnmarshalJSON.
+			logrus.Error("nvgpu evidence is not valid with sgx evidence")
+			return nil, &HandledError{Code: http.StatusBadRequest, Message: "nvgpu evidence is not valid with sgx evidence"}
 		}
 
-		evidence := itaConnector.Evidence{
-			Evidence: req.KeyTransferRequest.Quote,
-			UserData: req.KeyTransferRequest.RuntimeData,
-			EventLog: req.KeyTransferRequest.EventLog,
+		if len(req.KeyTransferRequest.NVGPU) > 0 {
+			// Composite TDX+NVGPU: call ITA v2 attest endpoint directly.
+			token, err = svc.getTokenV2(
+				ctx,
+				req.KeyTransferRequest.Quote,
+				req.KeyTransferRequest.RuntimeData,
+				req.KeyTransferRequest.EventLog,
+				policyIds,
+				req.KeyTransferRequest.NVGPU,
+				itaRequestID,
+			)
+		} else if req.KeyTransferRequest.V2SGX {
+			// SGX V2: call ITA v2 attest endpoint with nested SGX evidence.
+			token, err = svc.getTokenV2SGX(
+				ctx,
+				req.KeyTransferRequest.Quote,
+				req.KeyTransferRequest.RuntimeData,
+				policyIds,
+				itaRequestID,
+			)
+		} else {
+			// TDX/SGX V1: use go-connector.
+			evidence := itaConnector.Evidence{
+				Evidence: req.KeyTransferRequest.Quote,
+				UserData: req.KeyTransferRequest.RuntimeData,
+				EventLog: req.KeyTransferRequest.EventLog,
+			}
+			tokenRequest := itaConnector.GetTokenArgs{
+				Nonce:     nil, // nonce disabled this phase
+				Evidence:  &evidence,
+				PolicyIds: policyIds,
+				RequestId: itaRequestID,
+			}
+			tokenResp, err2 := svc.itaClient.GetToken(tokenRequest)
+			if err2 != nil {
+				logrus.WithError(err2).Error("Error retrieving token from Trust Authority service")
+				return nil, &HandledError{Code: http.StatusBadGateway, Message: "Error retrieving token from Trust Authority service"}
+			}
+			token = tokenResp.Token
 		}
-		tokenRequest := itaConnector.GetTokenArgs{
-			Nonce:     req.KeyTransferRequest.VerifierNonce,
-			Evidence:  &evidence,
-			PolicyIds: policyIds,
-			RequestId: itaRequestID,
-		}
-
-		tokenResp, err := svc.itaApiClient.GetToken(tokenRequest)
 		if err != nil {
 			logrus.WithError(err).Error("Error retrieving token from Trust Authority service")
 			return nil, &HandledError{Code: http.StatusBadGateway, Message: "Error retrieving token from Trust Authority service"}
 		}
-		token = tokenResp.Token
 	}
 
 	claims, err := svc.authenticateToken(token)
@@ -144,10 +187,6 @@ func (svc service) TransferKeyWithEvidence(_ context.Context, req TransferKeyReq
 	}
 
 	tokenClaims := claims.(*model.AttestationTokenClaim)
-	if tokenClaims.AttesterType != transferPolicy.AttestationType {
-		logrus.Error("attestation-token is not valid for attestation-type in key-transfer policy")
-		return nil, &HandledError{Code: http.StatusUnauthorized, Message: "attestation-token is not valid for attestation-type in key-transfer policy"}
-	}
 
 	transferResponse, httpStatus, err := svc.validateClaimsAndGetKey(tokenClaims, transferPolicy, key.KeyInfo.Algorithm, tokenClaims.AttesterHeldData, req.KeyId)
 	if err != nil {
@@ -155,20 +194,34 @@ func (svc service) TransferKeyWithEvidence(_ context.Context, req TransferKeyReq
 	}
 
 	resp := &TransferKeyResponse{
+		AttestationType:     tokenClaims.AttesterType.String(),
 		KeyTransferResponse: transferResponse.(*model.KeyTransferResponse),
 	}
 	return resp, nil
 }
 
 func (svc service) authenticateToken(token string) (interface{}, error) {
-
+	version := detectTokenVersion(token)
+	if strings.HasPrefix(version, "2") {
+		// ITA v2 token path
+		claimsV2 := &model.AttestationTokenV2Claim{}
+		jwtToken, err := svc.itaClient.VerifyToken(token)
+		if err != nil {
+			return nil, errors.Wrap(err, "Error while verifying the token")
+		}
+		_, err = crypt.GetTokenClaims(jwtToken, token, claimsV2)
+		if err != nil {
+			return nil, errors.Wrap(err, "Error while parsing the token claims")
+		}
+		return claimsV2.ToAttestationTokenClaim(), nil
+	}
+	// ITA v1 token path (existing behavior, unchanged)
 	claims := &model.AttestationTokenClaim{}
-	jwtToken, err := svc.itaTokenVerifierClient.VerifyToken(token)
+	jwtToken, err := svc.itaClient.VerifyToken(token)
 	if err != nil {
 		return nil, errors.Wrap(err, "Error while verifying the token")
 	}
-
-	_, err = crypt.GetTokenClaims(jwtToken, token, &claims)
+	_, err = crypt.GetTokenClaims(jwtToken, token, claims)
 	if err != nil {
 		return nil, errors.Wrap(err, "Error while parsing the token claims")
 	}
@@ -183,7 +236,12 @@ func (svc service) validateClaimsAndGetKey(tokenClaims *model.AttestationTokenCl
 		return nil, http.StatusUnauthorized, &HandledError{Message: "Token claims validation against key-transfer-policy failed"}
 	}
 
-	return svc.getWrappedKey(keyAlgorithm, userData, keyId, transferPolicy.AttestationType)
+	kt, err := transferPolicy.AttestationType.KeyWrappingAttesterType()
+	if err != nil {
+		logrus.WithError(err).Error("no key-wrapping attester type in policy")
+		return nil, http.StatusInternalServerError, &HandledError{Message: "policy has no key-wrapping attester type"}
+	}
+	return svc.getWrappedKey(keyAlgorithm, userData, keyId, kt)
 }
 
 func (svc service) getWrappedKey(keyAlgorithm, userData string, id uuid.UUID, attesterType model.AttesterType) (interface{}, int, error) {
@@ -379,4 +437,107 @@ func AesEncrypt(data, key []byte) ([]byte, []byte, error) {
 
 	// here we encrypt data using the Seal function
 	return gcm.Seal(nil, nonce, data, nil), nonce, nil
+}
+
+// getPolicyIDsForAttestationTypes collects PolicyIds from the sub-policies that
+// are actually listed in transferPolicy.AttestationType.  Sub-policy objects that
+// are present in the struct but whose type is absent from AttestationType are
+// intentionally ignored so that stale entries do not contribute unexpected IDs.
+func getPolicyIDsForAttestationTypes(transferPolicy *model.KeyTransferPolicy) []uuid.UUID {
+	var policyIds []uuid.UUID
+	seen := make(map[uuid.UUID]bool)
+	addUnique := func(ids []uuid.UUID) {
+		for _, id := range ids {
+			if !seen[id] {
+				seen[id] = true
+				policyIds = append(policyIds, id)
+			}
+		}
+	}
+	if transferPolicy.AttestationType.Contains(model.SGX) && transferPolicy.SGX != nil {
+		addUnique(transferPolicy.SGX.PolicyIds)
+	}
+	if transferPolicy.AttestationType.Contains(model.TDX) && transferPolicy.TDX != nil {
+		addUnique(transferPolicy.TDX.PolicyIds)
+	}
+	if transferPolicy.AttestationType.Contains(model.NVGPU) && transferPolicy.NVGPU != nil {
+		addUnique(transferPolicy.NVGPU.PolicyIds)
+	}
+	return policyIds
+}
+
+// getTokenV2 calls the ITA /appraisal/v2/attest endpoint for composite TDX+NVGPU
+// evidence via the consolidated itaClient (AttestEvidence).
+func (svc service) getTokenV2(ctx context.Context, quote, runtimeData, eventLog []byte, policyIds []uuid.UUID, nvgpu json.RawMessage, reqID string) (string, error) {
+	tdxEvidence := &itaV2EvidenceTDX{
+		Quote:       quote,
+		RuntimeData: runtimeData,
+		EventLog:    eventLog,
+	}
+	reqBody := itaV2AttestRequest{
+		PolicyIds: policyIds,
+		TDX:       tdxEvidence,
+		NVGPU:     nvgpu,
+	}
+	resp, err := svc.itaClient.AttestEvidence(reqBody, "", reqID)
+	if err != nil {
+		return "", errors.Wrap(err, "ITA v2 attest request failed")
+	}
+	return resp.Token, nil
+}
+
+// getTokenV2SGX calls the ITA /appraisal/v2/attest endpoint for SGX-only V2
+// evidence via the consolidated itaClient (AttestEvidence).
+func (svc service) getTokenV2SGX(ctx context.Context, quote, runtimeData []byte, policyIds []uuid.UUID, reqID string) (string, error) {
+	sgxEvidence := &itaV2EvidenceSGX{
+		Quote:       quote,
+		RuntimeData: runtimeData,
+	}
+	reqBody := itaV2AttestRequest{
+		PolicyIds: policyIds,
+		SGX:       sgxEvidence,
+	}
+	resp, err := svc.itaClient.AttestEvidence(reqBody, "", reqID)
+	if err != nil {
+		return "", errors.Wrap(err, "ITA v2 SGX attest request failed")
+	}
+	return resp.Token, nil
+}
+
+// buildITAV2EndpointURL builds the ITA v2 attest endpoint from TrustAuthorityApiUrl.
+// It strips any existing path from baseURL so that a URL pre-configured with a
+// versioned path (e.g. .../appraisal/v1) does not produce a double-path like
+// .../appraisal/v1/appraisal/v2/attest.
+// resourcePath should be "/attest".
+func buildITAV2EndpointURL(baseURL, resourcePath string) string {
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Host == "" {
+		// Fallback: best-effort concatenation on unparseable input.
+		base := strings.TrimRight(baseURL, "/")
+		return base + "/appraisal/v2" + resourcePath
+	}
+	u.Path = "/appraisal/v2" + resourcePath
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}
+
+// detectTokenVersion returns the "ver" claim from a JWT without full verification.
+// Returns "" on any error so callers can treat it as v1.
+func detectTokenVersion(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		Ver string `json:"ver"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+	return claims.Ver
 }

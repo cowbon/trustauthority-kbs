@@ -8,29 +8,32 @@ package ita
 
 import (
 	"crypto/tls"
+	"intel/kbs/v1/config"
+
 	itaConnector "github.com/intel/trustauthority-client/go-connector"
 	"github.com/pkg/errors"
-	"intel/kbs/v1/config"
 )
 
-func NewITAClient(config *config.Configuration, serverNameTlsConfig string) (itaConnector.Connector, error) {
+// NewITAClient creates a new Intel Trust Authority connector for the given configuration.
+// The TLS ServerName is intentionally left empty — Go's TLS stack derives it automatically
+// from the URL hostname, so no explicit override is needed for normal production use.
+func NewITAClient(cfg *config.Configuration) (itaConnector.Connector, error) {
 
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS12,
-		ServerName: serverNameTlsConfig,
 	}
 
-	cfg := itaConnector.Config{
-		BaseUrl:     config.TrustAuthorityBaseUrl,
+	connectorCfg := itaConnector.Config{
+		BaseUrl:     cfg.TrustAuthorityBaseUrl,
 		TlsCfg:      tlsConfig,
-		ApiUrl:      config.TrustAuthorityApiUrl,
-		ApiKey:      config.TrustAuthorityApiKey,
+		ApiUrl:      cfg.TrustAuthorityApiUrl,
+		ApiKey:      cfg.TrustAuthorityApiKey,
 		RetryConfig: nil,
 	}
 
-	connector, err := itaConnector.New(&cfg)
+	connector, err := itaConnector.New(&connectorCfg)
 	if err != nil {
-		return nil, errors.Wrap(err, "Error creating an instance of TrustAuthority Client")
+		return nil, errors.Wrap(err, "error creating TrustAuthority connector")
 	}
 	return connector, nil
 }

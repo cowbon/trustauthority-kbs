@@ -1,5 +1,5 @@
 /*
- *   Copyright (c) 2024 Intel Corporation
+ *   Copyright (c) 2024-2026 Intel Corporation
  *   All rights reserved.
  *   SPDX-License-Identifier: BSD-3-Clause
  */
@@ -8,10 +8,12 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"intel/kbs/v1/model"
+	"net/http"
 	"testing"
 
-	jwtlib "github.com/golang-jwt/jwt/v4"
+	jwtlib "github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	itaConnector "github.com/intel/trustauthority-client/go-connector"
 	"github.com/onsi/gomega"
@@ -185,20 +187,21 @@ func TestKeyTransferInvalidAttestationToken(t *testing.T) {
 func TestKeyTransferWithoutEvidence(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	itaClientConnector.On("GetNonce", mock.Anything).Return(nonceResp, nil).Once()
-
 	svc := LoggingMiddleware()(svcInstance)
 	g.Expect(svc).NotTo(gomega.BeNil())
 
+	// No attestation_token and no Attestation-Type header should return 400.
 	transReq := &model.KeyTransferRequest{}
-
 	request := TransferKeyRequest{
 		KeyId:              uuid.MustParse("ed37c360-7eae-4250-a677-6ee12adce8e3"),
 		KeyTransferRequest: transReq,
 	}
 
 	_, err := svc.TransferKeyWithEvidence(context.Background(), request)
-	g.Expect(err).NotTo(gomega.HaveOccurred())
+	g.Expect(err).To(gomega.HaveOccurred())
+	handledErr, ok := err.(*HandledError)
+	g.Expect(ok).To(gomega.BeTrue())
+	g.Expect(handledErr.Code).To(gomega.Equal(http.StatusBadRequest))
 }
 
 func TestGetPublicKey_WithMissingAttesterHeldData_ReturnsError(t *testing.T) {
@@ -209,6 +212,132 @@ func TestGetPublicKey_WithMissingAttesterHeldData_ReturnsError(t *testing.T) {
 	g.Expect(err).To(gomega.HaveOccurred())
 	g.Expect(err.Error()).To(gomega.Equal("attester held data is missing or invalid"))
 	g.Expect(publicKey).To(gomega.BeNil())
+}
+
+// TestGetPublicKey_ShortData exercises the bounds-check guard for inputs that
+// decode to fewer than 5 bytes.  Before the fix these would panic with a
+// runtime slice-bounds error (CWE-129 / DoS).
+func TestGetPublicKey_ShortData_ReturnsError(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	cases := []struct {
+		name    string
+		decoded []byte
+	}{
+		{"0 bytes", []byte{}},
+		{"3 bytes", []byte{0x01, 0x02, 0x03}},
+		{"4 bytes", []byte{0x00, 0x00, 0x10, 0x01}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			encoded := base64.StdEncoding.EncodeToString(tc.decoded)
+			key, err := getPublicKey(encoded, model.TDX)
+			g.Expect(err).To(gomega.HaveOccurred(), "expected error for %s", tc.name)
+			g.Expect(err.Error()).To(gomega.Equal("attester held data is missing or invalid"))
+			g.Expect(key).To(gomega.BeNil())
+		})
+	}
+}
+
+// TestGetPolicyIDsForAttestationTypes_FiltersUnused verifies that sub-policy IDs
+// are only collected for attester types listed in AttestationType, and that stale
+// sub-policy objects for unlisted types are ignored.
+func TestGetPolicyIDsForAttestationTypes_FiltersUnused(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	tdxID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+	sgxID := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+	nvgpuID := uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")
+
+	policy := &model.KeyTransferPolicy{
+		AttestationType: model.AttesterTypes{model.TDX},
+		TDX:             &model.TdxPolicy{PolicyIds: []uuid.UUID{tdxID}},
+		SGX:             &model.SgxPolicy{PolicyIds: []uuid.UUID{sgxID}},     // not in AttestationType
+		NVGPU:           &model.NvgpuPolicy{PolicyIds: []uuid.UUID{nvgpuID}}, // not in AttestationType
+	}
+
+	ids := getPolicyIDsForAttestationTypes(policy)
+	g.Expect(ids).To(gomega.HaveLen(1))
+	g.Expect(ids[0]).To(gomega.Equal(tdxID))
+}
+
+// TestGetPolicyIDsForAttestationTypes_Composite verifies all sub-policies are
+// included when AttestationType lists all types.
+func TestGetPolicyIDsForAttestationTypes_Composite(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	tdxID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+	nvgpuID := uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")
+
+	policy := &model.KeyTransferPolicy{
+		AttestationType: model.AttesterTypes{model.TDX, model.NVGPU},
+		TDX:             &model.TdxPolicy{PolicyIds: []uuid.UUID{tdxID}},
+		NVGPU:           &model.NvgpuPolicy{PolicyIds: []uuid.UUID{nvgpuID}},
+	}
+
+	ids := getPolicyIDsForAttestationTypes(policy)
+	g.Expect(ids).To(gomega.HaveLen(2))
+}
+
+// TestSGXKeyTransfer_AttestationTypeInResponse verifies that a successful key
+// transfer populates TransferKeyResponse.AttestationType from the token claims.
+func TestSGXKeyTransfer_AttestationTypeInResponse(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	itaClientConnector.On("GetToken", mock.Anything).Return(sgxTokenResp, nil).Once()
+	jwtToken := parseJWTToken(sgxToken, []byte(""))
+	itaClientConnector.On("VerifyToken", mock.Anything).Return(jwtToken, nil).Once()
+
+	kmipClient.On("GetKey", mock.Anything, mock.Anything).Return(key, nil)
+	kmipKeyManager.On("TransferKey", mock.AnythingOfType("*model.KeyAttributes")).Return([]uint8(key), nil)
+
+	svc := LoggingMiddleware()(svcInstance)
+	transReq := &model.KeyTransferRequest{
+		Quote:         []byte(""),
+		VerifierNonce: &itaConnector.VerifierNonce{},
+		RuntimeData:   []byte(""),
+	}
+
+	request := TransferKeyRequest{
+		KeyId:              uuid.MustParse("87d59b82-33b7-47e7-8fcb-6f7f12c82719"),
+		AttestationType:    "SGX",
+		KeyTransferRequest: transReq,
+	}
+
+	resp, err := svc.TransferKeyWithEvidence(context.Background(), request)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	g.Expect(resp.AttestationType).To(gomega.Equal("SGX"))
+}
+
+// TestTDXKeyTransfer_AttestationTypeInResponse verifies the same for TDX.
+func TestTDXKeyTransfer_AttestationTypeInResponse(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	itaClientConnector.On("GetToken", mock.Anything).Return(tdxTokenResp, nil).Once()
+	jwtToken := parseJWTToken(tdxToken, []byte(""))
+	itaClientConnector.On("VerifyToken", mock.Anything).Return(jwtToken, nil).Once()
+
+	kmipClient.On("GetKey", mock.Anything, mock.Anything).Return(key, nil)
+	kmipKeyManager.On("TransferKey", mock.AnythingOfType("*model.KeyAttributes")).Return([]uint8(key), nil)
+
+	svc := LoggingMiddleware()(svcInstance)
+	transReq := &model.KeyTransferRequest{
+		Quote:         []byte(""),
+		VerifierNonce: &itaConnector.VerifierNonce{},
+		RuntimeData:   []byte(""),
+		EventLog:      []byte(""),
+	}
+
+	request := TransferKeyRequest{
+		KeyId:              uuid.MustParse("ed37c360-7eae-4250-a677-6ee12adce8e3"),
+		AttestationType:    "TDX",
+		KeyTransferRequest: transReq,
+	}
+
+	resp, err := svc.TransferKeyWithEvidence(context.Background(), request)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	g.Expect(resp.AttestationType).To(gomega.Equal("TDX"))
 }
 
 // ParseJWTToken parses a JWT token string and returns a jwt.Token object.

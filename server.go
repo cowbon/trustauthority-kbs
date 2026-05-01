@@ -14,10 +14,8 @@ import (
 	"encoding/pem"
 	"fmt"
 	"intel/kbs/v1/clients/ita"
-	"intel/kbs/v1/config"
 	"intel/kbs/v1/tasks"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -75,30 +73,14 @@ func (app *App) startServer() error {
 	repository := repository.NewDirectoryRepository(constant.HomeDir)
 	remoteManager := keymanager.NewRemoteManager(repository.KeyStore, keyManager)
 
-	itaApiServername, err := url.Parse(config.TrustAuthorityApiUrl)
-	if err != nil {
-		return errors.Wrap(err, "Error parsing Trust Authority API url")
-	}
-
 	// initialize ITA client
-	itaApiClient, err := ita.NewITAClient(configuration, itaApiServername.Hostname())
+	itaClient, err := ita.NewITAClient(configuration)
 	if err != nil {
 		return errors.Wrap(err, "Failed to initialize TrustAuthority Client")
 	}
 
-	// initialize ITA client for token verification
-	itaTokenVerifierServername, err := url.Parse(config.TrustAuthorityBaseUrl)
-	if err != nil {
-		return errors.Wrap(err, "Error parsing Trust Authority Base url")
-	}
-
-	itaTokenVerifierClient, err := ita.NewITAClient(configuration, itaTokenVerifierServername.Hostname())
-	if err != nil {
-		return errors.Wrap(err, "Failed to initialize TrustAuthority Client for attestation token verification")
-	}
-
 	// Initialize the Service
-	svc, err := service.NewService(itaApiClient, itaTokenVerifierClient, repository, remoteManager, configuration)
+	svc, err := service.NewService(itaClient, repository, remoteManager, configuration)
 	if err != nil {
 		msg := "Failed to initialize Service"
 		log.WithError(err).Error(msg)

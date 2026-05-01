@@ -850,3 +850,163 @@ func TestKeyTransferPolicyCreateInvalidTDXData(t *testing.T) {
 	t.Log("Response: ", string(data))
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
 }
+
+// TestKeyTransferPolicyCreateNVGPUWithoutSubPolicy verifies that a policy whose
+// attestation_type includes NVGPU is rejected when the nvgpu sub-policy is absent.
+func TestKeyTransferPolicyCreateNVGPUWithoutSubPolicy(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	res1 := &model.KeyTransferPolicy{}
+
+	mockService := &MockService{}
+	mockService.On("CreateKeyTransferPolicy", mock.Anything, mock.Anything).Return(res1, nil)
+	handler := createMockHandler(mockService)
+
+	err := setKeyTransferPolicyHandler(mockService, mux.NewRouter(), nil, jwtAuth)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	// TDX+NVGPU in attestation_type but no nvgpu object.
+	keyJson := `{
+		"attestation_type": ["TDX","NVGPU"],
+		"tdx": {
+			"attributes": {}
+		}
+	}`
+
+	req, _ := http.NewRequest(http.MethodPost, "/kbs/v1/key-transfer-policies", bytes.NewReader([]byte(keyJson)))
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer res.Body.Close()
+
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+
+	t.Log("Response: ", string(data))
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+}
+
+// TestKeyTransferPolicyCreateValidTDXNVGPUData verifies that a composite TDX+NVGPU
+// policy with an nvgpu sub-policy present is accepted.
+func TestKeyTransferPolicyCreateValidTDXNVGPUData(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	res1 := &model.KeyTransferPolicy{}
+
+	mockService := &MockService{}
+	mockService.On("CreateKeyTransferPolicy", mock.Anything, mock.Anything).Return(res1, nil)
+	handler := createMockHandler(mockService)
+
+	err := setKeyTransferPolicyHandler(mockService, mux.NewRouter(), nil, jwtAuth)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	keyJson := `{
+		"attestation_type": ["TDX","NVGPU"],
+		"tdx": {
+			"attributes": {}
+		},
+		"nvgpu": {}
+	}`
+
+	req, _ := http.NewRequest(http.MethodPost, "/kbs/v1/key-transfer-policies", bytes.NewReader([]byte(keyJson)))
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer res.Body.Close()
+
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+
+	t.Log("Response: ", string(data))
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusCreated))
+}
+
+// TestKeyTransferPolicyCreateSGXAndTDX verifies that a policy combining SGX and TDX
+// is rejected because the two attester types are mutually exclusive for key wrapping.
+func TestKeyTransferPolicyCreateSGXAndTDX(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	res1 := &model.KeyTransferPolicy{}
+
+	mockService := &MockService{}
+	mockService.On("CreateKeyTransferPolicy", mock.Anything, mock.Anything).Return(res1, nil)
+	handler := createMockHandler(mockService)
+
+	err := setKeyTransferPolicyHandler(mockService, mux.NewRouter(), nil, jwtAuth)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	keyJson := `{
+		"attestation_type": ["SGX","TDX"],
+		"sgx": {},
+		"tdx": {}
+	}`
+
+	req, _ := http.NewRequest(http.MethodPost, "/kbs/v1/key-transfer-policies", bytes.NewReader([]byte(keyJson)))
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer res.Body.Close()
+
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+
+	t.Log("Response: ", string(data))
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+}
+
+// TestKeyTransferPolicyCreateNVGPUWithSGX verifies that NVGPU+SGX is rejected
+// because NVGPU can only accompany TDX.
+func TestKeyTransferPolicyCreateNVGPUWithSGX(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+	res1 := &model.KeyTransferPolicy{}
+
+	mockService := &MockService{}
+	mockService.On("CreateKeyTransferPolicy", mock.Anything, mock.Anything).Return(res1, nil)
+	handler := createMockHandler(mockService)
+
+	err := setKeyTransferPolicyHandler(mockService, mux.NewRouter(), nil, jwtAuth)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	keyJson := `{
+		"attestation_type": ["SGX","NVGPU"],
+		"sgx": {},
+		"nvgpu": {}
+	}`
+
+	req, _ := http.NewRequest(http.MethodPost, "/kbs/v1/key-transfer-policies", bytes.NewReader([]byte(keyJson)))
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Content-type", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer res.Body.Close()
+
+	data, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+
+	t.Log("Response: ", string(data))
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
+}
