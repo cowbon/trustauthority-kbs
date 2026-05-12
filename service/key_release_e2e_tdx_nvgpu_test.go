@@ -11,9 +11,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -26,9 +28,9 @@ import (
 
 	jwtlib "github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
+	itaConnector "github.com/intel/trustauthority-client/go-connector"
 	"github.com/onsi/gomega"
 	"github.com/stretchr/testify/mock"
-	itaConnector "github.com/intel/trustauthority-client/go-connector"
 
 	"intel/kbs/v1/clients/ita"
 	"intel/kbs/v1/config"
@@ -202,7 +204,7 @@ func TestE2EKeyReleaseWithRealTokenTDXAndNVGPUPolicy(t *testing.T) {
 	g.Expect(v2Claims.NVGPU).NotTo(gomega.BeNil())
 
 	legacyClaims := v2Claims.ToAttestationTokenClaim()
-	if legacyClaims.AttesterHeldData == "" {
+	if legacyClaims.AttesterHeldData == "" && getAttesterRuntimePublicKey(legacyClaims) == "" {
 		// Some ITA V2 tokens may omit held-data; inject one for wrap-key verification.
 		legacyClaims.AttesterHeldData = generateTDXHeldDataPublicKeyBase64(t)
 	}
@@ -297,7 +299,7 @@ func TestE2ETransferKeyWithEvidenceRealToken(t *testing.T) {
 		},
 	})
 
-	if legacyClaims.AttesterHeldData == "" {
+	if legacyClaims.AttesterHeldData == "" && getAttesterRuntimePublicKey(legacyClaims) == "" {
 		g.Expect(err).To(gomega.HaveOccurred())
 		g.Expect(err.Error()).To(gomega.ContainSubstring("Error in getting public key"))
 		return
@@ -372,7 +374,7 @@ func TestE2ETransferKeyWithEvidenceRealVerifier(t *testing.T) {
 		},
 	})
 
-	if legacyClaims.AttesterHeldData == "" {
+	if legacyClaims.AttesterHeldData == "" && getAttesterRuntimePublicKey(legacyClaims) == "" {
 		g.Expect(err).To(gomega.HaveOccurred())
 		g.Expect(err.Error()).To(gomega.ContainSubstring("Error in getting public key"))
 		return
@@ -397,7 +399,7 @@ func TestE2ETransferKeyWithEvidence_GetTokenPath(t *testing.T) {
 	_, err := policyStore.Create(&model.KeyTransferPolicy{
 		ID:              policyID,
 		AttestationType: model.AttesterTypes{model.TDX},
-		TDX: &model.TdxPolicy{Attributes: &model.TdxAttributes{}},
+		TDX:             &model.TdxPolicy{Attributes: &model.TdxAttributes{}},
 	})
 	g.Expect(err).NotTo(gomega.HaveOccurred())
 
@@ -450,7 +452,7 @@ func TestE2ETransferKeyWithEvidence_GetTokenPath(t *testing.T) {
 	itaClient.AssertExpectations(t)
 }
 
-func TestE2ETransferKeyWithEvidence_GetTokenV2Path_MissingHeldDataReturnsError(t *testing.T) {
+func TestE2ETransferKeyWithEvidence_GetTokenV2Path_MissingHeldDataFallsBackToRuntimeData(t *testing.T) {
 	reqJSONPath := firstNonEmpty(os.Getenv("KBS_REQ_JSON_PATH"), filepath.Join("..", "transport", "http", "req.json"))
 	reqBytes, err := os.ReadFile(reqJSONPath)
 	if err != nil {
@@ -466,7 +468,7 @@ func TestE2ETransferKeyWithEvidence_GetTokenV2Path_MissingHeldDataReturnsError(t
 
 	g := gomega.NewGomegaWithT(t)
 
-	mockToken := buildTDXNVGPUV2TokenNoHeldDataForE2E(t)
+	mockToken := buildTDXNVGPUV2TokenNoHeldDataWithRuntimeDataForE2E(t)
 	v2Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"token": mockToken})
@@ -523,18 +525,21 @@ func TestE2ETransferKeyWithEvidence_GetTokenV2Path_MissingHeldDataReturnsError(t
 		KeyId:           keyID,
 		AttestationType: model.NVGPU.String(),
 		KeyTransferRequest: &model.KeyTransferRequest{
-			NVGPU:         rawReq.NVGPU,
+			NVGPU: rawReq.NVGPU,
 		},
 	})
 
-	g.Expect(resp).To(gomega.BeNil())
-	g.Expect(err).To(gomega.HaveOccurred())
-	g.Expect(err.Error()).To(gomega.ContainSubstring("Error in getting public key"))
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+	g.Expect(resp).NotTo(gomega.BeNil())
+	g.Expect(resp.KeyTransferResponse).NotTo(gomega.BeNil())
+	g.Expect(len(resp.KeyTransferResponse.WrappedKey)).To(gomega.BeNumerically(">", 0))
+	g.Expect(len(resp.KeyTransferResponse.WrappedSWK)).To(gomega.BeNumerically(">", 0))
 	itaClient.AssertExpectations(t)
 }
 
-func buildTDXNVGPUV2TokenNoHeldDataForE2E(t *testing.T) string {
+func buildTDXNVGPUV2TokenNoHeldDataWithRuntimeDataForE2E(t *testing.T) string {
 	t.Helper()
+	tdxHeldData := generateTDXHeldDataPublicKeyPEM(t)
 
 	header := map[string]interface{}{"alg": "PS384", "typ": "JWT"}
 	payload := map[string]interface{}{
@@ -544,14 +549,18 @@ func buildTDXNVGPUV2TokenNoHeldDataForE2E(t *testing.T) string {
 		"tdx": map[string]interface{}{
 			"attester_type":       "TDX",
 			"attester_tcb_status": "UpToDate",
-			"tdx_mrseam":          cns.ValidMrSeam,
-			"tdx_mrsignerseam":    cns.ValidMrSignerSeam,
-			"tdx_mrtd":            cns.ValidMRTD,
-			"tdx_rtmr0":           cns.ValidRTMR0,
-			"tdx_rtmr1":           cns.ValidRTMR1,
-			"tdx_rtmr2":           cns.ValidRTMR2,
-			"tdx_rtmr3":           cns.ValidRTMR3,
-			"tdx_seamsvn":         0,
+			"attester_runtime_data": map[string]interface{}{
+				"kbs-session-id": "jnjknjnwcooednciko",
+				"public-key":     tdxHeldData,
+			},
+			"tdx_mrseam":       cns.ValidMrSeam,
+			"tdx_mrsignerseam": cns.ValidMrSignerSeam,
+			"tdx_mrtd":         cns.ValidMRTD,
+			"tdx_rtmr0":        cns.ValidRTMR0,
+			"tdx_rtmr1":        cns.ValidRTMR1,
+			"tdx_rtmr2":        cns.ValidRTMR2,
+			"tdx_rtmr3":        cns.ValidRTMR3,
+			"tdx_seamsvn":      0,
 		},
 		"nvgpu": map[string]interface{}{
 			"attester_type":               "NVGPU",
@@ -573,6 +582,43 @@ func buildTDXNVGPUV2TokenNoHeldDataForE2E(t *testing.T) string {
 
 	return base64.RawURLEncoding.EncodeToString(hdrBytes) + "." +
 		base64.RawURLEncoding.EncodeToString(plBytes) + ".sig"
+}
+
+func generateTDXHeldDataPublicKeyPEM(t *testing.T) string {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 3072)
+	if err != nil {
+		t.Fatalf("failed to generate rsa key: %v", err)
+	}
+
+	pubDER, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	if err != nil {
+		t.Fatalf("failed to marshal rsa public key: %v", err)
+	}
+
+	return string(pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: pubDER,
+	}))
+}
+
+func getAttesterRuntimePublicKey(claims *model.AttestationTokenClaim) string {
+	if claims == nil || len(claims.AttesterRuntime) == 0 {
+		return ""
+	}
+
+	publicKey, ok := claims.AttesterRuntime["public-key"]
+	if !ok {
+		return ""
+	}
+
+	value, ok := publicKey.(string)
+	if !ok {
+		return ""
+	}
+
+	return strings.TrimSpace(value)
 }
 
 func getTokenFromEnvOrReqJSON(t *testing.T) string {

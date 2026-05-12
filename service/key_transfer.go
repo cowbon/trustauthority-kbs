@@ -341,7 +341,32 @@ func (svc service) validateClaimsAndGetKey(tokenClaims *model.AttestationTokenCl
 		return nil, http.StatusUnauthorized, &HandledError{Message: "Token claims validation against key-transfer-policy failed"}
 	}
 
+	userData = getAttesterPublicKeyData(tokenClaims, userData)
 	return svc.getWrappedKey(keyAlgorithm, userData, keyId, transferPolicy.AttestationType.First())
+}
+
+func getAttesterPublicKeyData(tokenClaims *model.AttestationTokenClaim, userData string) string {
+	if strings.TrimSpace(userData) != "" || tokenClaims == nil {
+		return userData
+	}
+
+	runtimeData := tokenClaims.AttesterRuntime
+	if len(runtimeData) == 0 {
+		return userData
+	}
+
+	publicKey, ok := runtimeData["public-key"]
+	if !ok {
+		return userData
+	}
+
+	key, ok := publicKey.(string)
+	if !ok {
+		logrus.Warn("attester_runtime_data.public-key is not a string")
+		return userData
+	}
+
+	return strings.TrimSpace(key)
 }
 
 func (svc service) getWrappedKey(keyAlgorithm, userData string, id uuid.UUID, attesterType model.AttesterType) (interface{}, int, error) {
@@ -440,8 +465,15 @@ func (svc service) getWrappedKey(keyAlgorithm, userData string, id uuid.UUID, at
 
 func getPublicKey(userData string, attesterType model.AttesterType) (*rsa.PublicKey, error) {
 
-	if strings.TrimSpace(userData) == "" {
+	userData = strings.TrimSpace(userData)
+	if userData == "" {
 		return nil, errors.New("attester held data is missing")
+	}
+
+	// ITA may surface runtime-data JSON directly in attester_runtime_data. In that
+	// case the "public-key" field can already be PEM text rather than a base64 string.
+	if publicKey, ok, err := parseRSAPublicKeyFromPEM([]byte(userData)); ok {
+		return publicKey, err
 	}
 
 	key, err := base64.StdEncoding.DecodeString(userData)
@@ -454,19 +486,8 @@ func getPublicKey(userData string, attesterType model.AttesterType) (*rsa.Public
 	// If the decoded bytes are PEM-encoded (e.g. produced by trustauthority-cli or
 	// standard OpenSSL/Go tools), parse them as a standard PKIX public key.
 	// This handles TDX attesters that embed the public key as a PEM block in user_data.
-	if block, _ := pem.Decode(key); block != nil {
-		pub, err := x509.ParsePKIXPublicKey(block.Bytes)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to parse PEM public key")
-		}
-		rsaPub, ok := pub.(*rsa.PublicKey)
-		if !ok {
-			return nil, errors.New("public key in user_data is not an RSA key")
-		}
-		if rsaPub.N.BitLen() <= 2048 {
-			return nil, errors.New("RSA key size must be greater than 2048 bits")
-		}
-		return rsaPub, nil
+	if publicKey, ok, err := parseRSAPublicKeyFromPEM(key); ok {
+		return publicKey, err
 	}
 
 	// Legacy raw binary format: [4-byte exponent][modulus]
@@ -493,6 +514,28 @@ func getPublicKey(userData string, attesterType model.AttesterType) (*rsa.Public
 
 	pubKey := rsa.PublicKey{N: &n, E: int(eb)}
 	return &pubKey, nil
+}
+
+func parseRSAPublicKeyFromPEM(key []byte) (*rsa.PublicKey, bool, error) {
+	block, _ := pem.Decode(key)
+	if block == nil {
+		return nil, false, nil
+	}
+
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, true, errors.Wrap(err, "failed to parse PEM public key")
+	}
+
+	rsaPub, ok := pub.(*rsa.PublicKey)
+	if !ok {
+		return nil, true, errors.New("public key in user_data is not an RSA key")
+	}
+	if rsaPub.N.BitLen() <= 2048 {
+		return nil, true, errors.New("RSA key size must be greater than 2048 bits")
+	}
+
+	return rsaPub, true, nil
 }
 
 func getSecretKey(remoteManager *keymanager.RemoteManager, id uuid.UUID) (interface{}, int, error) {

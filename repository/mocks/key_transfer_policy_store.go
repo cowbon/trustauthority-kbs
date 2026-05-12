@@ -4,14 +4,12 @@
 package mocks
 
 import (
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"intel/kbs/v1/repository/directory"
 	"reflect"
 	"time"
-
-        "github.com/google/uuid"
-	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 
 	"intel/kbs/v1/model"
 	cns "intel/kbs/v1/repository/mocks/constants"

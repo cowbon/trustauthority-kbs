@@ -24,6 +24,10 @@ func TestAttestationTokenV2TDXToLegacy(t *testing.T) {
 			"attester_type": "TDX",
 			"attester_tcb_status": "UpToDate",
 			"attester_held_data": "ita_v2_held_data",
+			"attester_runtime_data": {
+				"kbs-session-id": "ita_v2_session_id",
+				"public-key": "ita_v2_runtime_public_key"
+			},
 			"verifier_instance_ids": ["` + instanceID + `"],
 			"tdx_mrseam": "tdx-mrseam",
 			"tdx_mrsignerseam": "tdx-mrsignerseam",
@@ -46,6 +50,8 @@ func TestAttestationTokenV2TDXToLegacy(t *testing.T) {
 	g.Expect(legacy.AttesterType).To(gomega.Equal(TDX))
 	g.Expect(legacy.AttesterTcbStatus).To(gomega.Equal("UpToDate"))
 	g.Expect(legacy.AttesterHeldData).To(gomega.Equal("ita_v2_held_data"))
+	g.Expect(legacy.AttesterRuntime).To(gomega.HaveKeyWithValue("kbs-session-id", "ita_v2_session_id"))
+	g.Expect(legacy.AttesterRuntime).To(gomega.HaveKeyWithValue("public-key", "ita_v2_runtime_public_key"))
 	g.Expect(legacy.VerifierInstanceIds).To(gomega.HaveLen(1))
 	g.Expect(legacy.VerifierInstanceIds[0].String()).To(gomega.Equal(instanceID))
 	g.Expect(legacy.TDXClaims).NotTo(gomega.BeNil())
