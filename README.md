@@ -40,7 +40,7 @@ The workload (key requester) makes a request to the KBS to retrieve a particular
 - KBS checks if the attestation type in the request is the same as the attestation type in the key policy.
 - If the attestation type matches with the key policy, KBS forwards the request to Intel Trust Authority with the Quote, Runtime-data, and a verifier-nonce; it also optionally sends a list of policy IDs to be matched by Intel Trust Authority in the request body.
 - Intel Trust Authority verifies the nonce and Quote and then issues the attestation token to KBS on successful verification.
-- KBS then parses the attestation token to get all the claims and matches the token claims with the policy associated with the key to be retrieved.
+- KBS then parses the attestation token to get all the claims and matches the token claims with the policy associated with the key to be retrieved. KBS supports both ITA v1 tokens (`ver: "1.0.0"`) and ITA v2 tokens (`ver: "2.x"`) containing nested `tdx`, `sgx`, and `nvgpu` claim sub-objects.
 - If all the token claims match against the policy, KBS creates an SWK and wraps the secret/key Key with SWK, and SWK is wrapped with a public key received in the request (runtime-data).
 - KBS responds with both wrapped requested key and wrapped SWK to the key requestor.
 
@@ -265,57 +265,87 @@ Use the "admin" token to create key transfer policies by defining the rules to r
 }
 ```
 
-### Create a key transfer policy for the SGX or TDX workload
+### Create a key transfer policy for the SGX, TDX, or composite TDX+NVGPU workload
 
-A key transfer policy contains the information required for a key to be released to a relying party. 
+A key transfer policy contains the information required for a key to be released to a relying party. KBS supports ITA v2 attestation tokens and can enforce attestation requirements for SGX enclaves, TDX Trust Domains, and NVIDIA GPU (NVGPU) devices — including composite TDX+NVGPU policies that require both a TDX and an NVGPU attestation in the same token.
 
 A user with the "key-transfer-policy:create" permission in the token can create a policy for a key.
 
 #### POST /key-transfer-policies 
 
-Creates a key transfer policy. Only one SGX or TDX key transfer policy can be created at a time. A key transfer policy can be created in the following ways:
+Creates a key transfer policy. A key transfer policy can be created in the following ways:
 
 - by providing only a list of policy-ids 
-- by providing only TDX or SGX attributes 
-- by providing both a list of policy-ids and TDX or SGX attributes
+- by providing only attestation attributes 
+- by providing both a list of policy-ids and attestation attributes
+
+The `attestation_type` field accepts either a plain string (`"SGX"`, `"TDX"`) or an array (`["TDX", "NVGPU"]`) for composite policies.
 
 ***Example SGX policy***
 
 ```bash
-	{
+{
     "attestation_type": "SGX",
-    "sgx":{
-            "attributes":{
-                "mrsigner": ["83d719e77deaca1470f6baf62a4d774303c899db69020f9c70ee1dfc08c7ce9e"],
-                "isvprodid":[0],
-                "mrenclave":["83f4e819861adef6ffb2a4865efea9337b91ed30fa33491b17f0d5d9e8204410"],
-                "isvsvn":0,
-                "enforce_tcb_upto_date":false
-            }
-		}
-	}
+    "sgx": {
+        "attributes": {
+            "mrsigner": ["83d719e77deaca1470f6baf62a4d774303c899db69020f9c70ee1dfc08c7ce9e"],
+            "isvprodid": [0],
+            "mrenclave": ["83f4e819861adef6ffb2a4865efea9337b91ed30fa33491b17f0d5d9e8204410"],
+            "isvsvn": 0,
+            "enforce_tcb_upto_date": false
+        }
+    }
+}
 ```
 
 ***Example TDX policy***
 
 ```bash
-	{
-    "attestation_type":["TDX"],
-    "tdx":{
-            "attributes":{
-                "mrseam":["2fd279c16164a93dd5bf373d834328d46008c2b693af9ebb865b08b2ced320c9a89b4869a9fab60fbe9d0c5a5363c656"],
-                "mrsignerseam":["000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"],
-                "seamsvn":"3",
-                "mrtd":["5f53c3881242a5b418854923bb4adec34c72aa4b570d526179d63f9ee6e4cefb6abd4f0f35e5e6e29655a60d90bcf27f"],
-                "rtmr0": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-                "rtmr1": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-                "rtmr2": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-                "rtmr3": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-                "enforce_tcb_upto_date" : "false"
-            }
-		}
-	}
+{
+    "attestation_type": ["TDX"],
+    "tdx": {
+        "attributes": {
+            "mrseam": ["2fd279c16164a93dd5bf373d834328d46008c2b693af9ebb865b08b2ced320c9a89b4869a9fab60fbe9d0c5a5363c656"],
+            "mrsignerseam": ["000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"],
+            "seamsvn": 3,
+            "mrtd": ["5f53c3881242a5b418854923bb4adec34c72aa4b570d526179d63f9ee6e4cefb6abd4f0f35e5e6e29655a60d90bcf27f"],
+            "enforce_tcb_upto_date": false
+        }
+    }
+}
 ```
+
+***Example composite TDX+NVGPU policy***
+
+Use this policy type when the workload runs inside a TDX Trust Domain and also requires attestation of attached NVIDIA GPUs.
+
+```bash
+{
+    "attestation_type": ["TDX", "NVGPU"],
+    "tdx": {
+        "policy_ids": ["a1b2c3d4-0000-0000-0000-111111111111"],
+        "attributes": {
+            "mrseam": ["2fd279c16164a93dd5bf373d834328d46008c2b693af9ebb865b08b2ced320c9a89b4869a9fab60fbe9d0c5a5363c656"],
+            "mrsignerseam": ["000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"],
+            "seamsvn": 3,
+            "enforce_tcb_upto_date": false
+        }
+    },
+    "nvgpu": {
+        "policy_ids": ["b2c3d4e5-0000-0000-0000-222222222222"],
+        "attributes": {
+            "enforce_overall_attestation_result": true,
+            "require_secure_boot": true,
+            "hwmodel": ["GB100"]
+        }
+    }
+}
+```
+
+The `nvgpu.attributes` fields are:
+- `enforce_overall_attestation_result` — if `true`, the `x-nvidia-overall-att-result` claim in the token must be `true`.
+- `require_secure_boot` — if `true`, every GPU's `secboot` claim must be `true`.
+- `hwmodel` — if set, every GPU's `hwmodel` claim must appear in this allowlist (e.g. `["GB100"]`).
 
 ### Create a key
 
@@ -351,17 +381,35 @@ Please refer to [Passport verification mode](#passport-verification-mode) and [B
 }
 ```
 
-***Sample request for background mode***
+***Sample request for background mode — SGX/TDX (flat format)***
 
 ```bash
 {
-"quote": "{{SGX-QUOTE}}",
-"nonce": {
-"val": "{{NONCE}}",
-"iat": "{{NONCE-DATE}}",
-"signature": "{{NONCE-SIGNATURE}}"
-},
-"user_data": "{{USER-DATA}}"
+    "quote": "{{SGX-OR-TDX-QUOTE}}",
+    "nonce": {
+        "val": "{{NONCE}}",
+        "iat": "{{NONCE-DATE}}",
+        "signature": "{{NONCE-SIGNATURE}}"
+    },
+    "user_data": "{{RUNTIME-DATA}}"
+}
+```
+
+***Sample request for background mode — composite TDX+NVGPU***
+
+For workloads that require composite TDX and NVGPU attestation, include the raw NVGPU SDK evidence in the `nvgpu` field alongside the TDX quote. The `event_log` field carries the RTMR event log.
+
+```bash
+{
+    "quote": "{{TDX-QUOTE}}",
+    "nonce": {
+        "val": "{{NONCE}}",
+        "iat": "{{NONCE-DATE}}",
+        "signature": "{{NONCE-SIGNATURE}}"
+    },
+    "user_data": "{{RUNTIME-DATA}}",
+    "event_log": "{{RTMR-EVENT-LOG}}",
+    "nvgpu": {{NVGPU-SDK-EVIDENCE-JSON}}
 }
 ```
 

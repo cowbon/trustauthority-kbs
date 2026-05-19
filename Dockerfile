@@ -45,8 +45,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     BUILDDATE=$(TZ=UTC date +%Y-%m-%dT%H:%M:%S%z); \
     env CGO_CFLAGS_ALLOW="-f.*" GOOS=linux GOSUMDB=off \
     /usr/local/go/bin/go test \
-        $(go list ./... | grep -v '/mocks') -coverprofile cover.out \
-    -ldflags "-X intel/kbs/cache/v1/version.BuildDate=${BUILDDATE} -X intel/kbs/cache/v1/version.Version=${VERSION} -X intel/kbs/cache/v1/version.GitHash=${GITCOMMIT}"
+        $(go list ./... | grep -v '/mocks' | grep -v '/kbsclient') -coverprofile cover.out \
+    -ldflags "-X intel/kbs/v1/version.BuildDate=${BUILDDATE} -X intel/kbs/v1/version.Version=${VERSION} -X intel/kbs/v1/version.GitHash=${GITCOMMIT}"
 RUN  /usr/local/go/bin/go tool cover -html=cover.out -o cover.html
 
 FROM builder AS swagger

@@ -156,24 +156,32 @@ func (svc service) TransferKeyWithEvidence(ctx context.Context, req TransferKeyR
 				itaRequestID,
 			)
 		} else {
-			// TDX/SGX V1: use go-connector.
-			evidence := itaConnector.Evidence{
-				Evidence: req.KeyTransferRequest.Quote,
-				UserData: req.KeyTransferRequest.RuntimeData,
-				EventLog: req.KeyTransferRequest.EventLog,
+			// Plain TDX or SGX (no NVGPU, no V2SGX flag): route through the
+			// v2 attest endpoint via AttestEvidence.
+			// go-connector v1.11.0 removed the v1 endpoint and made
+			// GetTokenArgs.attestEndpoint unexported, so calling GetToken
+			// directly from outside the package produces a broken URL
+			// (bare ApiUrl with no path appended).
+			if model.AttesterType(req.AttestationType) == model.SGX {
+				token, err = svc.getTokenV2SGX(
+					ctx,
+					req.KeyTransferRequest.Quote,
+					req.KeyTransferRequest.RuntimeData,
+					policyIds,
+					itaRequestID,
+				)
+			} else {
+				// TDX (no NVGPU).
+				token, err = svc.getTokenV2(
+					ctx,
+					req.KeyTransferRequest.Quote,
+					req.KeyTransferRequest.RuntimeData,
+					req.KeyTransferRequest.EventLog,
+					policyIds,
+					nil,
+					itaRequestID,
+				)
 			}
-			tokenRequest := itaConnector.GetTokenArgs{
-				Nonce:     nil, // nonce disabled this phase
-				Evidence:  &evidence,
-				PolicyIds: policyIds,
-				RequestId: itaRequestID,
-			}
-			tokenResp, err2 := svc.itaClient.GetToken(tokenRequest)
-			if err2 != nil {
-				logrus.WithError(err2).Error("Error retrieving token from Trust Authority service")
-				return nil, &HandledError{Code: http.StatusBadGateway, Message: "Error retrieving token from Trust Authority service"}
-			}
-			token = tokenResp.Token
 		}
 		if err != nil {
 			logrus.WithError(err).Error("Error retrieving token from Trust Authority service")
@@ -486,8 +494,9 @@ func getPolicyIDsForAttestationTypes(transferPolicy *model.KeyTransferPolicy) []
 	return policyIds
 }
 
-// getTokenV2 calls the ITA /appraisal/v2/attest endpoint for composite TDX+NVGPU
-// evidence via the consolidated itaClient (AttestEvidence).
+// getTokenV2 calls the ITA /appraisal/v2/attest endpoint for TDX evidence,
+// with or without composite NVGPU evidence, via itaClient (AttestEvidence).
+// Pass nvgpu=nil for plain TDX; pass the raw NVGPU JSON for TDX+NVGPU.
 func (svc service) getTokenV2(ctx context.Context, quote, runtimeData, eventLog []byte, policyIds []uuid.UUID, nvgpu json.RawMessage, reqID string) (string, error) {
 	tdxEvidence := &itaV2EvidenceTDX{
 		Quote:       quote,

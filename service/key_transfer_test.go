@@ -37,12 +37,14 @@ var (
 		Token:   tdxToken,
 		Headers: nil,
 	}
+	sgxAttestResp = itaConnector.AttestResponse{Token: sgxToken}
+	tdxAttestResp = itaConnector.AttestResponse{Token: tdxToken}
 )
 
 func TestKeyTransferRSA(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	itaClientConnector.On("GetToken", mock.Anything).Return(sgxTokenResp, nil).Once()
+	itaClientConnector.On("AttestEvidence", mock.Anything, mock.Anything, mock.Anything).Return(sgxAttestResp, nil).Once()
 	jwtToken := parseJWTToken(sgxToken, []byte(""))
 	itaClientConnector.On("VerifyToken", mock.Anything).Return(jwtToken, nil).Once()
 
@@ -73,7 +75,7 @@ func TestKeyTransferRSA(t *testing.T) {
 func TestSGXKeyTransfer(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	itaClientConnector.On("GetToken", mock.Anything).Return(sgxTokenResp, nil).Once()
+	itaClientConnector.On("AttestEvidence", mock.Anything, mock.Anything, mock.Anything).Return(sgxAttestResp, nil).Once()
 	jwtToken := parseJWTToken(sgxToken, []byte(""))
 	itaClientConnector.On("VerifyToken", mock.Anything).Return(jwtToken, nil).Once()
 
@@ -104,7 +106,7 @@ func TestSGXKeyTransfer(t *testing.T) {
 func TestTDXKeyTransfer(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	itaClientConnector.On("GetToken", mock.Anything).Return(tdxTokenResp, nil).Once()
+	itaClientConnector.On("AttestEvidence", mock.Anything, mock.Anything, mock.Anything).Return(tdxAttestResp, nil).Once()
 	jwtToken := parseJWTToken(tdxToken, []byte(""))
 	itaClientConnector.On("VerifyToken", mock.Anything).Return(jwtToken, nil).Once()
 
@@ -165,7 +167,8 @@ func TestKeyTransferInvalidKeyId(t *testing.T) {
 func TestKeyTransferInvalidAttestationToken(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	itaClientConnector.On("GetToken", mock.Anything).Return(sgxTokenResp, nil).Once()
+	// Return an SGX token for a TDX-policy key — claim validation rejects it.
+	itaClientConnector.On("AttestEvidence", mock.Anything, mock.Anything, mock.Anything).Return(sgxAttestResp, nil).Once()
 	jwtToken := parseJWTToken(sgxToken, []byte(""))
 	itaClientConnector.On("VerifyToken", mock.Anything).Return(jwtToken, nil).Once()
 
@@ -285,7 +288,7 @@ func TestGetPolicyIDsForAttestationTypes_Composite(t *testing.T) {
 func TestSGXKeyTransfer_AttestationTypeInResponse(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	itaClientConnector.On("GetToken", mock.Anything).Return(sgxTokenResp, nil).Once()
+	itaClientConnector.On("AttestEvidence", mock.Anything, mock.Anything, mock.Anything).Return(sgxAttestResp, nil).Once()
 	jwtToken := parseJWTToken(sgxToken, []byte(""))
 	itaClientConnector.On("VerifyToken", mock.Anything).Return(jwtToken, nil).Once()
 
@@ -314,7 +317,7 @@ func TestSGXKeyTransfer_AttestationTypeInResponse(t *testing.T) {
 func TestTDXKeyTransfer_AttestationTypeInResponse(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
-	itaClientConnector.On("GetToken", mock.Anything).Return(tdxTokenResp, nil).Once()
+	itaClientConnector.On("AttestEvidence", mock.Anything, mock.Anything, mock.Anything).Return(tdxAttestResp, nil).Once()
 	jwtToken := parseJWTToken(tdxToken, []byte(""))
 	itaClientConnector.On("VerifyToken", mock.Anything).Return(jwtToken, nil).Once()
 

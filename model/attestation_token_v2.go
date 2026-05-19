@@ -31,10 +31,11 @@ type AttestationTokenV2Claim struct {
 // attester_held_data, attester_tcb_status, attester_advisory_ids and dbgstat all
 // live here (not at the top level) in V2 tokens.
 type TDXClaimV2 struct {
-	AttesterHeldData    string   `json:"attester_held_data,omitempty"`
-	AttesterTcbStatus   string   `json:"attester_tcb_status,omitempty"`
-	AttesterAdvisoryIds []string `json:"attester_advisory_ids,omitempty"`
-	DbgStat             string   `json:"dbgstat,omitempty"`
+	AttesterHeldData    string      `json:"attester_held_data,omitempty"`
+	AttesterTcbStatus   string      `json:"attester_tcb_status,omitempty"`
+	AttesterAdvisoryIds []string    `json:"attester_advisory_ids,omitempty"`
+	DbgStat             string      `json:"dbgstat,omitempty"`
+	AttesterRuntime     interface{} `json:"attester_runtime_data,omitempty"`
 	*TDXClaims
 }
 
@@ -42,17 +43,18 @@ type TDXClaimV2 struct {
 // attester_held_data, attester_tcb_status, attester_advisory_ids and dbgstat all
 // live here (not at the top level) in V2 tokens. SGX cannot be combined with NVGPU.
 type SGXClaimV2 struct {
-	AttesterHeldData    string   `json:"attester_held_data,omitempty"`
-	AttesterTcbStatus   string   `json:"attester_tcb_status,omitempty"`
-	AttesterAdvisoryIds []string `json:"attester_advisory_ids,omitempty"`
-	DbgStat             string   `json:"dbgstat,omitempty"`
+	AttesterHeldData    string      `json:"attester_held_data,omitempty"`
+	AttesterTcbStatus   string      `json:"attester_tcb_status,omitempty"`
+	AttesterAdvisoryIds []string    `json:"attester_advisory_ids,omitempty"`
+	DbgStat             string      `json:"dbgstat,omitempty"`
+	AttesterRuntime     interface{} `json:"attester_runtime_data,omitempty"`
 	*SGXClaims
 }
 
 // NVGPUClaimV2 holds NVGPU-specific claims nested under the "nvgpu" key in a v2 token.
 type NVGPUClaimV2 struct {
 	OverallAttResult *bool                       `json:"x-nvidia-overall-att-result,omitempty"`
-	Claims           map[string]NVGPUClaimDetail `json:"claims,omitempty"`
+	Claims           map[string]NVGPUClaimDetail `json:"claim_details,omitempty"`
 }
 
 // ToAttestationTokenClaim converts an ITA v2 token into the flat v1-shaped
@@ -82,6 +84,7 @@ func (v2 *AttestationTokenV2Claim) ToAttestationTokenClaim() *AttestationTokenCl
 		flat.AttesterTcbStatus = v2.SGX.AttesterTcbStatus
 		flat.AttesterAdvisoryIds = v2.SGX.AttesterAdvisoryIds
 		flat.DbgStat = v2.SGX.DbgStat
+		flat.AttesterRuntime = v2.SGX.AttesterRuntime
 	} else if v2.TDX != nil {
 		flat.TDXClaims = v2.TDX.TDXClaims
 		flat.AttesterHeldData = v2.TDX.AttesterHeldData
@@ -90,6 +93,7 @@ func (v2 *AttestationTokenV2Claim) ToAttestationTokenClaim() *AttestationTokenCl
 		flat.AttesterTcbStatus = v2.TDX.AttesterTcbStatus
 		flat.AttesterAdvisoryIds = v2.TDX.AttesterAdvisoryIds
 		flat.DbgStat = v2.TDX.DbgStat
+		flat.AttesterRuntime = v2.TDX.AttesterRuntime
 
 		// NVGPU can only accompany TDX, not SGX.
 		if v2.NVGPU != nil {

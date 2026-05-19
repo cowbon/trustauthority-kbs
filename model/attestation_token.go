@@ -14,9 +14,12 @@ import (
 type AttestationTokenClaim struct {
 	*SGXClaims
 	*TDXClaims
-	AttesterHeldData      string                      `json:"attester_held_data,omitempty"` // Is this finalized?
-	AttesterInittime      map[string]interface{}      `json:"attester_inittime_data,omitempty"`
-	AttesterRuntime       map[string]interface{}      `json:"attester_runtime_data,omitempty"`
+	AttesterHeldData string                 `json:"attester_held_data,omitempty"` // Is this finalized?
+	AttesterInittime map[string]interface{} `json:"attester_inittime_data,omitempty"`
+	// attester_runtime_data is a JSON object when the workload submits structured
+	// runtime_data, or a plain string when it submits opaque/binary runtime_data.
+	// interface{} accepts both forms without custom unmarshalling.
+	AttesterRuntime       interface{}                 `json:"attester_runtime_data,omitempty"`
 	VerifierNonce         *itaConnector.VerifierNonce `json:"verifier_nonce,omitempty"`
 	PolicyIdsMatched      []PolicyClaim               `json:"policy_ids_matched,omitempty"`
 	PolicyIdsUnmatched    []PolicyClaim               `json:"policy_ids_unmatched,omitempty"`
