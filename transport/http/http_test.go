@@ -129,12 +129,16 @@ func (svc *MockService) CreateAuthToken(ctx context.Context, request model.AuthT
 }
 
 func createMockHandler(mockService *MockService) http.Handler {
+	return createMockHandlerWithAuth(mockService, jwtAuth)
+}
+
+func createMockHandlerWithAuth(mockService *MockService, authz *model.JwtAuthz) http.Handler {
 	cfg := config.Configuration{
 		ServicePort: 12780,
 		LogCaller:   true,
 		LogLevel:    "debug",
 	}
 
-	handler, _ := NewHTTPHandler(mockService, &cfg, jwtAuth)
+	handler, _ := NewHTTPHandler(mockService, &cfg, authz)
 	return handler
 }

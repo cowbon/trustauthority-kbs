@@ -22,11 +22,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	jwtStrategy "github.com/shaj13/go-guardian/v2/auth/strategies/jwt"
 
 	"intel/kbs/v1/constant"
 	"intel/kbs/v1/keymanager"
 	"intel/kbs/v1/repository"
+	"intel/kbs/v1/repository/directory"
 	"intel/kbs/v1/service"
 	httpTransport "intel/kbs/v1/transport/http"
 
@@ -124,6 +126,18 @@ func (app *App) startServer() error {
 	jwtAuthZ, err := service.SetupAuthZ(&jwtKeeper)
 	if err != nil {
 		return err
+	}
+
+	// Reject tokens for users that have been deleted since the token was issued.
+	jwtAuthZ.UserExistsFunc = func(id uuid.UUID) (bool, error) {
+		user, err := repository.UserStore.Retrieve(id)
+		if err != nil {
+			if err.Error() == directory.RecordNotFound {
+				return false, nil
+			}
+			return false, err
+		}
+		return user != nil, nil
 	}
 
 	// initialize defender

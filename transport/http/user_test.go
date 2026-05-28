@@ -8,17 +8,22 @@ package http
 
 import (
 	"bytes"
+	"errors"
 	"intel/kbs/v1/model"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	httpTransport "github.com/go-kit/kit/transport/http"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/onsi/gomega"
+	"github.com/shaj13/go-guardian/v2/auth"
+	jwtStrategy "github.com/shaj13/go-guardian/v2/auth/strategies/jwt"
 	"github.com/stretchr/testify/mock"
+	"intel/kbs/v1/constant"
 )
 
 func TestUserDeleteHandler(t *testing.T) {
@@ -747,4 +752,83 @@ func TestUserRetrieveHandlerWithInvalidHeader(t *testing.T) {
 		t.Errorf("expected error to be nil got %v", err)
 	}
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusUnsupportedMediaType))
+}
+
+// TestDeletedUserTokenRejected verifies that a valid JWT issued for a user
+// that has since been deleted is rejected with 401 Unauthorized.
+func TestDeletedUserTokenRejected(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	mockService := &MockService{}
+
+	deletedUserID := uuid.New()
+	u := auth.NewUserInfo("deleted-user", deletedUserID.String(), nil, nil)
+	ns := jwtStrategy.SetNamedScopes(constant.UserSearch)
+	tokenExp := time.Duration(constant.DefaultTokenExpiration) * time.Minute
+	exp := jwtStrategy.SetExpDuration(tokenExp)
+	deletedUserToken, err := jwtStrategy.IssueAccessToken(u, jwtAuth.JwtSecretKeeper, ns, exp)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	authz := *jwtAuth
+	authz.UserExistsFunc = func(id uuid.UUID) (bool, error) { return id != deletedUserID, nil }
+
+	handler := createMockHandlerWithAuth(mockService, &authz)
+
+	req, _ := http.NewRequest(http.MethodGet, "/kbs/v1/users", nil)
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+deletedUserToken)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusUnauthorized))
+	mockService.AssertNotCalled(t, "SearchUser", mock.Anything, mock.Anything)
+}
+
+func TestUserSearchHandlerUserLookupFailure(t *testing.T) {
+	g := gomega.NewGomegaWithT(t)
+
+	mockService := &MockService{}
+
+	lookupUserID := uuid.New()
+	u := auth.NewUserInfo("lookup-user", lookupUserID.String(), nil, nil)
+	ns := jwtStrategy.SetNamedScopes(constant.UserSearch)
+	tokenExp := time.Duration(constant.DefaultTokenExpiration) * time.Minute
+	exp := jwtStrategy.SetExpDuration(tokenExp)
+	lookupFailureToken, err := jwtStrategy.IssueAccessToken(u, jwtAuth.JwtSecretKeeper, ns, exp)
+	g.Expect(err).NotTo(gomega.HaveOccurred())
+
+	authz := *jwtAuth
+	authz.UserExistsFunc = func(id uuid.UUID) (bool, error) {
+		if id == lookupUserID {
+			return false, errors.New("lookup failed")
+		}
+		return true, nil
+	}
+
+	handler := createMockHandlerWithAuth(mockService, &authz)
+
+	req, _ := http.NewRequest(http.MethodGet, "/kbs/v1/users", nil)
+	req.Header.Set("Accept", HTTPMediaTypeJson)
+	req.Header.Set("Authorization", "Bearer "+lookupFailureToken)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer res.Body.Close()
+
+	_, err = io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("expected error to be nil got %v", err)
+	}
+	g.Expect(recorder.Code).To(gomega.Equal(http.StatusServiceUnavailable))
+	mockService.AssertNotCalled(t, "SearchUser", mock.Anything, mock.Anything)
 }

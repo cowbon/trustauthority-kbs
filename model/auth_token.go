@@ -7,6 +7,7 @@
 package model
 
 import (
+	"github.com/google/uuid"
 	"github.com/shaj13/go-guardian/v2/auth"
 	jwtStrategy "github.com/shaj13/go-guardian/v2/auth/strategies/jwt"
 )
@@ -14,6 +15,7 @@ import (
 type JwtAuthz struct {
 	JwtSecretKeeper jwtStrategy.SecretsKeeper
 	AuthZStrategy   auth.Strategy
+	UserExistsFunc  func(uuid.UUID) (bool, error)
 }
 
 type AuthTokenRequest struct {
