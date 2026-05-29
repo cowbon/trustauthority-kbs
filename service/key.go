@@ -13,11 +13,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sirupsen/logrus"
-
 	"intel/kbs/v1/model"
 
 	"github.com/google/uuid"
+	"github.com/oracle/oci-go-sdk/v65/common"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -56,12 +57,15 @@ func (svc service) CreateKey(_ context.Context, keyCreateReq model.KeyRequest) (
 	var createdKey *model.KeyResponse
 	if keyCreateReq.KeyInfo.KeyData == "" &&
 		keyCreateReq.KeyInfo.KmipKeyID == "" &&
-		(keyCreateReq.OciInfo == nil || keyCreateReq.OciInfo.SecretId == "") {
+		(keyCreateReq.OciInfo != nil && keyCreateReq.OciInfo.SecretId == "") {
 
 		log.Debug("Create key request received")
 		createdKey, err = svc.remoteManager.CreateKey(&keyCreateReq)
 		if err != nil {
 			log.WithError(err).Error("Key create failed")
+			if serviceErr, ok := common.IsServiceError(errors.Cause(err)); ok {
+				return nil, &HandledError{Code: serviceErr.GetHTTPStatusCode(), Message: serviceErr.GetMessage()}
+			}
 			return nil, &HandledError{Code: http.StatusInternalServerError, Message: "Failed to create key"}
 		}
 	} else {
