@@ -473,11 +473,6 @@ func TestKeyCreateHandlerInvalidKeyData(t *testing.T) {
 
 	g.Expect(recorder.Code).To(gomega.Equal(http.StatusBadRequest))
 	keyJson = `{
-		"key_information":{
-                      "algorithm": "AES",
-                      "key_length": 256,
-                      "key_data": "dGhlbWEgZm9y"
-		}
         }`
 
 	req, _ = http.NewRequest(http.MethodPost, "/kbs/v1/keys", bytes.NewReader([]byte(keyJson)))

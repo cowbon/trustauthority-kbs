@@ -109,7 +109,7 @@ func (vm *VaultManager) DeleteKey(attributes *model.KeyAttributes) error {
 
 func (vm *VaultManager) RegisterKey(request *model.KeyRequest) (*model.KeyAttributes, error) {
 	if request.KeyInfo.KeyData == "" {
-		return nil, errors.New("key_string cannot be empty for register operation")
+		return nil, errors.New("key_data cannot be empty for register operation in vault mode")
 	}
 
 	var key, publicKey, privateKey string

@@ -38,22 +38,22 @@ func NewOCIManager(c ociclient.OCIClient) *OCIManager {
 }
 
 func (om *OCIManager) CreateKey(keyRequest *model.KeyRequest) (*model.KeyAttributes, error) {
-	if keyRequest.OciInfo.CompartmentId == "" || keyRequest.OciInfo.KeyId == "" ||
+	if keyRequest.OciInfo == nil || keyRequest.OciInfo.CompartmentId == "" || keyRequest.OciInfo.KeyId == "" ||
 		keyRequest.OciInfo.SecretName == "" || keyRequest.OciInfo.VaultId == "" {
-		return nil, errors.New("Missing oci_compartment_id, oci_key_id, oci_secret_name, or oci_vault_id")
+		return nil, errors.New("Missing OCI information: compartment_id, key_id, secret_name, and vault_id required for key creation in OCI mode")
 	}
 
 	if !checkOCID(keyRequest.OciInfo.CompartmentId) {
-		return nil, errors.New("Invalid oci_compartment_id")
+		return nil, errors.New("Invalid OCI compartment_id provided in request")
 	}
 	if !checkOCID(keyRequest.OciInfo.KeyId) {
-		return nil, errors.New("Invalid oci_key_id")
+		return nil, errors.New("Invalid OCI key_id provided in request")
 	}
 	if !checkSecretName(keyRequest.OciInfo.SecretName) {
-		return nil, errors.New("Invalid oci_secret_name")
+		return nil, errors.New("Invalid OCI secret_name provided in request")
 	}
 	if !checkOCID(keyRequest.OciInfo.VaultId) {
-		return nil, errors.New("Invalid oci_vault_id")
+		return nil, errors.New("Invalid OCI vault_id provided in request")
 	}
 
 	newUuid, err := uuid.NewRandom()
@@ -97,8 +97,8 @@ func (om *OCIManager) DeleteKey(keyAttributes *model.KeyAttributes) error {
 }
 
 func (om *OCIManager) RegisterKey(keyRequest *model.KeyRequest) (*model.KeyAttributes, error) {
-	if keyRequest.OciInfo.SecretId == "" {
-		return nil, errors.New("oci_secret_id cannot be empty for register operation in OCI mode")
+	if keyRequest.OciInfo == nil || keyRequest.OciInfo.SecretId == "" {
+		return nil, errors.New("secret_id cannot be empty for register operation in OCI mode")
 	}
 
 	newUuid, err := uuid.NewRandom()

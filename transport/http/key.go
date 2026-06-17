@@ -345,6 +345,10 @@ func encodeTransferHTTPResponse(ctx context.Context, w http.ResponseWriter, resp
 // validateKeyCreateRequest checks for various attributes in the Create Key request and returns error or nil
 func validateKeyCreateRequest(keyCreateReq model.KeyRequest) error {
 
+	if keyCreateReq.KeyInfo == nil {
+		return errors.New("key_information is missing in request body")
+	}
+
 	algorithm := keyCreateReq.KeyInfo.Algorithm
 	if algorithm == "" {
 		return errors.New("key algorithm is missing")
@@ -354,35 +358,32 @@ func validateKeyCreateRequest(keyCreateReq model.KeyRequest) error {
 
 	if strings.ToUpper(algorithm) == constant.CRYPTOALGEC {
 		if keyCreateReq.KeyInfo.CurveType == "" {
-			return errors.New("curve_type must be provided")
+			return errors.New("curve_type must be provided for EC keys")
 		} else if !allowedCurveTypes[keyCreateReq.KeyInfo.CurveType] {
-			return errors.New("curve_type is not supported")
-		}
-	}
-
-	if keyCreateReq.KeyInfo.KeyLength == 0 {
-		return errors.New("Key length is missing")
-	}
-
-	if strings.ToUpper(algorithm) == constant.CRYPTOALGAES {
-		if !allowedAESKeyLengths[keyCreateReq.KeyInfo.KeyLength] {
-			return errors.New("key_length is not supported")
+			return errors.New("curve_type is not supported, it must be secp256r1, secp384r1, secp521r1 or prime256v1")
 		}
 	} else {
-		if !allowedRSAKeyLengths[keyCreateReq.KeyInfo.KeyLength] {
-			return errors.New("key_length is not supported")
+		if keyCreateReq.KeyInfo.KeyLength == 0 {
+			return errors.New("key_length is missing")
+		}
+
+		if strings.ToUpper(algorithm) == constant.CRYPTOALGAES {
+			if !allowedAESKeyLengths[keyCreateReq.KeyInfo.KeyLength] {
+				return errors.New("key_length is not supported for AES algorithm, it must be 256, 192 or 128 bits long")
+			}
+		} else {
+			if !allowedRSAKeyLengths[keyCreateReq.KeyInfo.KeyLength] {
+				return errors.New("key_length is not supported for RSA algorithm, it must be 2048, 3072, 4096 or 7680 bits long")
+			}
 		}
 	}
 
 	keyData := keyCreateReq.KeyInfo.KeyData
 	kmipKeyID := keyCreateReq.KeyInfo.KmipKeyID
 	if keyData != "" {
-		decodedKey, err := base64.StdEncoding.DecodeString(keyData)
+		_, err := base64.StdEncoding.DecodeString(keyData)
 		if err != nil {
-			return errors.New("key_data must be base64 encoded string for AES key and the private key in PEM format for RSA/EC keys")
-		}
-		if strings.ToUpper(algorithm) == constant.CRYPTOALGAES && !allowedAESKeyLengths[len(decodedKey)*8] {
-			return errors.New("key_data must be base64 encoded string for AES key of 256, 192 or 128 bits")
+			return errors.Wrap(err, "key_data must be base64 encoded string")
 		}
 	} else if kmipKeyID != "" {
 		if err := ValidateStrings([]string{kmipKeyID}); err != nil {
