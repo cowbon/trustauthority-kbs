@@ -3,10 +3,11 @@
 
 ARG VERSION=v0.0.0
 
-FROM golang:1.26.3 AS builder
+FROM oraclelinux:9 AS builder
 ARG VERSION
 WORKDIR /app
 COPY . .
+RUN yum install go
 RUN GITTAG=$(git describe --tags --abbrev=0 2>/dev/null); \
         GITCOMMIT=$(git describe --always); \
         VERSION=${VERSION:-v0.0.0}; \
@@ -17,10 +18,9 @@ RUN GITTAG=$(git describe --tags --abbrev=0 2>/dev/null); \
                 -ldflags "-linkmode=external -s -extldflags '-Wl,-z,relro,-z,now' -X intel/kbs/v1/version.BuildDate=${BUILDDATE} -X intel/kbs/v1/version.Version=${VERSION} -X intel/kbs/v1/version.GitHash=${GITCOMMIT}" \
                 -o kbs
 
-FROM ubuntu:22.04 AS final
+FROM oraclelinux:9 AS final
 # Install ca-certificates package to get the system certificates
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+RUN yum install ca-certificates
 ARG USERNAME=kbs
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
