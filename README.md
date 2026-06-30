@@ -143,7 +143,6 @@ This information can be found by logging in to https://cloud.oracle.com. To get 
 
 Note that when running with the OCI key manager, it is necessary to map the OCI configuration directory into the docker container. This can be acheived with the following invokation:
 
-    ```bash
     docker run -d \
       --restart unless-stopped \
       --name kbs \
@@ -152,8 +151,7 @@ Note that when running with the OCI key manager, it is necessary to map the OCI 
       -v /etc/kbs/certs:/etc/kbs/certs \
       -v /opt/kbs:/opt/kbs \
       -v ~/.oci:/home/kbs/.oci \
-      trustauthority/key-broker-service:v1.2.0
-    ```
+      trustauthority/key-broker-service:v1.4.0
 
 ### Build the KBS
 
@@ -242,7 +240,7 @@ On Linux, follow the steps below to install the KBS:
 4. Run the KBS container.
 
     ```bash
-    docker run -d --restart unless-stopped --name kbs --env-file <KBS env file> -p <KBS port>:9443 -v /etc/kbs/certs:/etc/kbs/certs -v /etc/hosts:/etc/hosts -v /opt/kbs:/opt/kbs trustauthority/key-broker-service:v1.2.0
+    docker run -d --restart unless-stopped --name kbs --env-file <KBS env file> -p <KBS port>:9443 -v /etc/kbs/certs:/etc/kbs/certs -v /etc/hosts:/etc/hosts -v /opt/kbs:/opt/kbs trustauthority/key-broker-service:v1.4.0
     ```
 ## KBS key creation and key retrieval
 
